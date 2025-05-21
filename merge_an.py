@@ -706,9 +706,9 @@ def import_an(report_func, context, file_path=""):
     return {'FINISHED'}
 
 
-class ImportAn(Operator, ImportHelper):
+class MergeAn(Operator, ImportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
-    bl_idname = "import.an"
+    bl_idname = "import.anmerge"
     bl_label = "Merge AN"
 
     # ImportHelper mixin class uses this
@@ -726,17 +726,17 @@ class ImportAn(Operator, ImportHelper):
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportAn.bl_idname,
+    self.layout.operator(MergeAn.bl_idname,
                          text="AN Merge(.json)")
 
 
 def register():
-    bpy.utils.register_class(ImportAn)
+    bpy.utils.register_class(MergeAn)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
-    bpy.utils.unregister_class(ImportAn)
+    bpy.utils.unregister_class(MergeAn)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
 
 
