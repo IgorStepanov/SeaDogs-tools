@@ -212,6 +212,17 @@ def import_sailorpoints(
         locator.empty_display_type = 'ARROWS'
         locator.empty_display_size = 0.5
         locator.matrix_basis = point.matrix
+        point.locator = locator
+        
+    for link in data.links:
+        first_point = data.points[link.points[0]]
+        second_point = data.points[link.points[1]]
+        
+        constraint = first_point.locator.constraints.new(type='TRACK_TO')
+        constraint.target = second_point.locator
+        constraint.name = 'link_{}'.format(link.idx)
+        pass
+        
     return {'FINISHED'}
 
 class ImportSailorPoints(Operator, ImportHelper):

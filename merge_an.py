@@ -29,8 +29,8 @@ convert_rules = {
         0: 1,
         1: 3,
         2: 4,
-        11: 0,
-        12: 0,
+        11: None,#3,
+        12: None, #4,
         3: 4,
         4: 3,
         5: 2,
@@ -40,24 +40,24 @@ convert_rules = {
         21: 16,
         
         17: 13,
-        22: 38,
-        26: 54,
-        27: 54,
-        28: 54,
-        32: 81,
-        33: 66,
+        22: 18,
+        26: 38,
+        27: None,
+        28: None,
+        32: 66,
+        33: None,
         36: 91,
-        37: 91,
+        37: None,
         
         18: 12,
-        23: 37,
-        29: 53,
-        30: 53,
-        31: 53,
-        34: 76,
-        35: 65,
+        23: 17,
+        29: 37,
+        30: None,
+        31: None,
+        34: 65,
+        35: None,
         38: 86,
-        39: 86,
+        39: None,
         
         6: 3,
         14: 8,
@@ -131,168 +131,229 @@ convert_rules = {
     'danny_to_woman': {
         0: 0,
         1: 0,
+        2: 5,
+        3: 6,
         4: 7,
+
+        6:8,
+        7:13,
+        11:16,
+        16:21,
         9: 15,
         15: 20,
         20: 25,
         26: None,
-        3: 6,
+        
         8: 14,
         14:19,
         19:24,
         25: None,
-        2: 5,
-        7:13,
-        11:16,
-        16:21,
+        
+        
+        
         12:18,
-        13:17
+        
+        
+        
+        13:17,
+        18:22,
+        40:26,
+        70:32,
+        96:36,
+        
+        12:18,
+        17:23,
+        39:29,
+        69:34,
+        91:38
+        
     },
     'danny_to_man': {
-      0:0,
-      1:1,
-      2:2,
-      7:7,
-      11:11,
-      16:16,
-      21:21,
-      22: None,
-      38: None,
-      55: None,
-      68: None,
-      79: None,
-      27:26,
-      28:27,
-      29:28,
-      30:29,
-      31:30,
-      32:31,
-      33:32,
-      34:33,
-      35:34,
-      36:35,
-      37:36,
-      41:39,
-      42:40,
-      58:55,
-      71:67,
-      59:56,
-      72:68,
-      43:41,
-      44:42,
-      45:43,
-      46:44,
-      47:45,
-      60:57,
-      73:69,
-      61:58,
-      74:70,
-      62:59,
-      75:71,
-      63:60,
-      64:61,
-      48:46,
-      49:47,
-      50:48,
-      65:62,
-      76:72,
-      66:63,
-      77:73,
-      67:64,
-      78:74,
-      51:49,
-      52:50,
-      53:51,
-      54:52,
-
-      12:12,
-      17:17,
-      23:22,
-      39:37,
-      56:53,
-      69:65,
-      80:75,
-      81:76,
-      82:77,
-      83:78,
-      84:79,
-      90:85,
-      100:95,
-      110:105,
-      91:86,
-      92:87,
-      93:88,
-      94:89,
-      101:96,
-      102:97,
-      103:98,
-      104:99,
-      111:106,
-      112:107,
-      113:108,
-      114:109,
-      120:115,
-      121:116,
-      122:117,
-      123:118,
-      
-      13:13,
-      18:18,
-      24:23,
-      40:38,
-      57:54,
-      70:66,
-      
-      85:80,
-      86:81,
-      87:82,
-      88:83,
-      89:84,
-      
-      95:90,
-      96:91,
-      97:92,
-      98:93,
-      99:94,
-      
-      105:100,
-      106:101,
-      107:102,
-      108:103,
-      109:104,
-      
-      115:110,
-      116:111,
-      117:112,
-      118:113,
-      119:114,
-      
-      124:119,
-      125:120,
-      126:121,
-      127:122,
-      
-      3:3,
-      8:8,
-      14:14,
-      19:19,
-      25:24,
-      
-      4:4,
-      9:9,
-      15:15,
-      20:20,
-      26:25,
-      
-      5:5,
-      10:10,
-      
-      6:6
+        0:0,
+        1:1,
+        2:2,
+        7:7,
+        11:11,
+        16:16,
+        21:21,
+        22: None,
+        38: None,
+        55: None,
+        68: None,
+        79: None,
+        27:26,
+        28:27,
+        29:28,
+        30:29,
+        31:30,
+        32:31,
+        33:32,
+        34:33,
+        35:34,
+        36:35,
+        37:36,
+        41:39,
+        42:40,
+        58:55,
+        71:67,
+        59:56,
+        72:68,
+        43:41,
+        44:42,
+        45:43,
+        46:44,
+        47:45,
+        60:57,
+        73:69,
+        61:58,
+        74:70,
+        62:59,
+        75:71,
+        63:60,
+        64:61,
+        48:46,
+        49:47,
+        50:48,
+        65:62,
+        76:72,
+        66:63,
+        77:73,
+        67:64,
+        78:74,
+        51:49,
+        52:50,
+        53:51,
+        54:52,
+        
+        12:12,
+        17:17,
+        23:22,
+        39:37,
+        56:53,
+        69:65,
+        80:75,
+        81:76,
+        82:77,
+        83:78,
+        84:79,
+        90:85,
+        100:95,
+        110:105,
+        91:86,
+        92:87,
+        93:88,
+        94:89,
+        101:96,
+        102:97,
+        103:98,
+        104:99,
+        111:106,
+        112:107,
+        113:108,
+        114:109,
+        120:115,
+        121:116,
+        122:117,
+        123:118,
+        
+        13:13,
+        18:18,
+        24:23,
+        40:38,
+        57:54,
+        70:66,
+        
+        85:80,
+        86:81,
+        87:82,
+        88:83,
+        89:84,
+        
+        95:90,
+        96:91,
+        97:92,
+        98:93,
+        99:94,
+        
+        105:100,
+        106:101,
+        107:102,
+        108:103,
+        109:104,
+        
+        115:110,
+        116:111,
+        117:112,
+        118:113,
+        119:114,
+        
+        124:119,
+        125:120,
+        126:121,
+        127:122,
+        
+        3:3,
+        8:8,
+        14:14,
+        19:19,
+        25:24,
+        
+        4:4,
+        9:9,
+        15:15,
+        20:20,
+        26:25,
+        
+        5:5,
+        10:10,
+        
+        6:6
     }
 }
 
 
+def transform_point_skirt(point_q, base_num, joints, mod_num, direction, rot = None):
+    a1 = mathutils.Quaternion((joints[base_num][0][0], joints[base_num][0][1], joints[base_num][0][2], joints[base_num][0][3]))
+    a2 = mathutils.Quaternion((point_q[0], 2*point_q[1], point_q[2], 2*point_q[3]))
+    b1 = mathutils.Quaternion((joints[mod_num][0][0], joints[mod_num][0][1], joints[mod_num][0][2], joints[mod_num][0][3]))
+    
+    if point_q[1] > 0 and direction == 'f':
+        return b1
+    elif point_q[1] < 0 and direction == 'b':
+        return b1 
+    a2a1 = a2 @ a1.inverted()
+    
+    b2 = a2a1 @ b1
+    
+    
+    leg_q = mathutils.Quaternion((point_q[0], point_q[1], point_q[2], point_q[3]))
+    leg_xr = abs(leg_q.to_euler('XYZ')[0])
+    
+    x_mod = leg_xr / math.radians(45.0)
+    
+    if rot is not None:
+        e = b2.to_euler('XYZ')
+        e[0] += x_mod * rot[0]
+        e[1] += rot[1]
+        e[2] += rot[2]
+        
+        b2 = e.to_quaternion()
+    return b2 
 
+
+anim_modifiers = {
+    'woman_to_man': {
+        1: lambda a, j : transform_point_skirt(a, 6, j, 1, 'f', (math.radians(60.0), 0.0, 0.0)), #[a[0], -1*a[1], -1 * a[0], 4 * a[3]],# [0.724759 - 1.0, -0.013815, -0.009461, -0.688799],
+        2: lambda a, j : transform_point_skirt(a, 7, j, 2, 'f', (math.radians(-60.0), 0.0, 0.0)), #[a[0], -1*a[1], -1 * a[0], 4 * a[3]],# [0.658084 - 1.0, -0.022546, 0.011745, -0.752515],
+        #11: [0.707107 - 1.0, 0, 0, 0.707107],
+        #12: [0.707197 - 1.0, -0.000041, 0.00017, 0.707017],
+        3: lambda a, j : transform_point_skirt(a, 7, j, 3, 'b'), #[0.998278 - 1.0, -0.002846, -0.042357, -0.040493],
+        4: lambda a, j : transform_point_skirt(a, 6, j, 4, 'b'), #[0.974792 - 1.0, 0.038104, -0.211684, -0.059318]
+        
+        9: lambda a, j : transform_point_skirt(a, 7, j, 9, '', (0.0, math.radians(-20.0), 0.0)), #[2*a[0], 0, -2*a[0], -2*a[0]],# [0.658084 - 1.0, -0.022546, 0.011745, -0.752515],
+        10: lambda a, j : transform_point_skirt(a, 6, j, 10, '', (0.0, math.radians(20.0), 0.0)) #[2*a[0], 0, 2*a[0], 2*a[0]]# [0.724759 - 1.0, -0.013815, -0.009461, -0.688799],
+    }
+}
 #{
 #	"name": "Normal to fight_mus",
 #	"length": 25,
@@ -317,14 +378,11 @@ def convertNode(node, rule):
     if rule is None:
         return node
     convert_rule = convert_rules[rule]
+    
+    if node not in convert_rule:
+        return None
     return convert_rule[node]
     
-def convertNodeMerge(node):
-    #return node
-    strNode = danny_to_woman[node]
-    if strNode is None:
-        return None
-    return int(strNode)
 
 
 correction_matrix = axis_conversion(
@@ -629,41 +687,45 @@ def import_an(report_func, context, file_path=""):
             
             for elem in append_list:
                 append_file = elem['file']
+                print('"{}" start: {}'.format(append_file, total_quantity))
                 total_quantity += an_files[append_file].frames_quantity
                 alt_bone_idx = convertNode(bone_idx, elem['convert_rule'])
                 for frame in range(an_files[append_file].frames_quantity):
+                    key_values.append(frame + frames_quantity)
                     if alt_bone_idx is not None:
-                        key_values.append(frame + frames_quantity)
-                        key_values.append(an_files[append_file].joints_angles[alt_bone_idx][frame][idx])
+                        transform = an_files[append_file].joints_angles[alt_bone_idx][frame]
+                        if elem['convert_rule'] in anim_modifiers and bone_idx in anim_modifiers[elem['convert_rule']]:
+                            transform = anim_modifiers[elem['convert_rule']][bone_idx](transform, joints_angles)
+                        key_values.append(transform[idx])
                     else:
-                        key_values.append(frame + frames_quantity)
                         key_values.append(joints_angles[bone_idx][default_frame][idx])
 
             for elem in merge_list:
                 frames_elem = None
                 anim_file = None
                 m_bone_idx = bone_idx
+                convert_rule = None
                 if bone_idx in top_nodes:
                     frames_elem = 'top_frames'
                     anim_file = elem['top_file']
-                    m_bone_idx = convertNode(bone_idx, elem['top_convert_rule'])
+                    convert_rule = elem['top_convert_rule']
                 else:
                     frames_elem = 'bottom_frames'
                     anim_file = elem['bottom_file']
-                    m_bone_idx = convertNode(bone_idx, elem['bottom_convert_rule'])
+                    convert_rule = elem['bottom_convert_rule']
 
+                m_bone_idx = convertNode(bone_idx, convert_rule)
                 frame_count = elem[frames_elem][1] - elem[frames_elem][0] + 1
                 print('"{}": {}'.format(elem['name'], total_quantity))
                 frame_start = elem[frames_elem][0]
                 for frame in range(frame_count):
+                    key_values.append(frame + total_quantity)
                     if m_bone_idx is not None:
-                        key_values.append(frame + total_quantity)
-                        angles = an_files[anim_file].joints_angles
-                        bone_angles = angles[m_bone_idx]
-                        frame_angles = bone_angles[frame + frame_start]
-                        key_values.append(frame_angles[idx])
+                        transform = an_files[anim_file].joints_angles[m_bone_idx][frame + frame_start]
+                        if convert_rule in anim_modifiers and bone_idx in anim_modifiers[convert_rule]:
+                            transform = anim_modifiers[convert_rule][bone_idx](transform, joints_angles)
+                        key_values.append(transform[idx])
                     else:
-                        key_values.append(frame + frames_quantity)
                         key_values.append(joints_angles[bone_idx][default_frame][idx])
                 total_quantity += frame_count
                     
@@ -679,19 +741,32 @@ def import_an(report_func, context, file_path=""):
                     frame_elem = 'bottom_frame'
                     anim_file_elem = 'bottom_file'
                     bottom_convert_rule = 'top_convert_rule'
-                    
-                first_frame_bone_idx = convertNode(bone_idx, elem['first_frame'][convert_rule_str])
-                last_frame_bone_idx = convertNode(bone_idx, elem['last_frame'][convert_rule_str])
+                first_convert_rule = elem['first_frame'][convert_rule_str]
+                first_frame_bone_idx = convertNode(bone_idx, first_convert_rule)
+                last_convert_rule = elem['last_frame'][convert_rule_str]
+                last_frame_bone_idx = convertNode(bone_idx, last_convert_rule)
                 
                 print('"{}": {}'.format(elem['name'], total_quantity))
                 
                 key_values.append(total_quantity)
-                key_values.append(an_files[elem['first_frame'][anim_file_elem]].joints_angles[first_frame_bone_idx][elem['first_frame'][frame_elem]][idx])
-                for frame in range(elem['length'] - 2): 
-                    key_values.append(total_quantity + frame + 1)
-                    key_values.append(0)
+                if first_frame_bone_idx is not None:
+                    transform = an_files[elem['first_frame'][anim_file_elem]].joints_angles[first_frame_bone_idx][elem['first_frame'][frame_elem]]
+                    if first_convert_rule in anim_modifiers and bone_idx in anim_modifiers[first_convert_rule]:
+                        transform = anim_modifiers[first_convert_rule][bone_idx](transform, joints_angles)
+                    key_values.append(transform[idx])
+                else:
+                    key_values.append(joints_angles[bone_idx][default_frame][idx])
+
                 key_values.append(total_quantity + elem['length'] - 1)
-                key_values.append(an_files[elem['last_frame'][anim_file_elem]].joints_angles[last_frame_bone_idx][elem['last_frame'][frame_elem]][idx])
+                
+                if last_frame_bone_idx is not None:
+                    transform = an_files[elem['last_frame'][anim_file_elem]].joints_angles[last_frame_bone_idx][elem['last_frame'][frame_elem]]
+                    if last_convert_rule in anim_modifiers and bone_idx in anim_modifiers[last_convert_rule]:
+                        transform = anim_modifiers[last_convert_rule][bone_idx](transform, joints_angles)
+                    key_values.append(transform[idx])
+                else:
+                    key_values.append(joints_angles[bone_idx][default_frame][idx])
+
                 total_quantity += elem['length']
                     
             print(len(key_values))

@@ -1,0 +1,46 @@
+
+{
+	"main_file": "Danielle.an",
+	"top_nodes": [0, 1, 4, 9, 15, 20, 26, 3, 8, 14, 19, 25, 2, 7, 11, 16, 12, 13],
+	"default_frame": 0,
+	"append_list": [
+		{
+			"file": "manplusmush.an",
+			"convert_rule": "danny_to_man"
+		}
+	],
+	
+	"merge_list": [
+		{
+		   "name": "kiss",
+		   "top_file": "Mary.an",
+		   "top_frames": [5392, 5632],
+		   "top_convert_rule": "danny_to_woman",
+		   "bottom_file": "manplusmush.an",
+		   "bottom_frames": [12238, 12478],
+		   "bottom_convert_rule": "danny_to_man"
+		}
+	],
+	"patch_list": [
+		{
+			"name": "Normal to fight_mus",
+			"length": 25,
+			"first_frame": {
+				"top_file": "Rumba.an",
+				"top_frame": 2235,
+				"bottom_file": "Rumba.an",
+				"bottom_frame": 2235,
+				"top_convert_rule": "danny_to_woman",
+				"bottom_convert_rule": "danny_to_woman"
+			},
+			"last_frame": {
+				"top_file": "mushketer_whisper.an",
+				"top_frame": 2050,
+				"bottom_file": "mushketer_whisper.an",
+				"bottom_frame": 2050,
+				"top_convert_rule": "danny_to_woman",
+				"bottom_convert_rule": "danny_to_woman"
+			}
+		}
+	]
+}

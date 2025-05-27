@@ -146,6 +146,8 @@ def export_sailorpoints(context, file_path="", report_func=None):
     sp = SailorPoints()
     sp.points = [None] * len(points)
     
+    loc_to_point = {}
+    
     for point in points:
         label_name = remove_blender_name_postfix(point.name)
         label_m = Matrix(point.matrix_world)
@@ -168,7 +170,45 @@ def export_sailorpoints(context, file_path="", report_func=None):
             report_func({'ERROR'}, 'unknown point type "{}"'.format(parts[0]))
             return {'CANCELLED'}
         sp.points[num] = Point(num, label_m, parts[0])
+        
+        loc_to_point[point.name] = sp.points[num]
 
+    links = []
+    for point in points:
+        for con in point.constraints[:]:
+            if con.type != "TRACK_TO":
+                continue
+            link_name = remove_blender_name_postfix(con.name) 
+            target = con.target
+            if target is None:
+                report_func({'ERROR'}, 'wrong link "{}"'.format(con.name))
+                return {'CANCELLED'}
+            parts = link_name.split('_')
+            if len(parts) != 2:
+                report_func({'ERROR'}, 'wrong link name "{}"; should be link_<number>'.format(link_name))
+                return {'CANCELLED'}
+                
+            num = int(parts[1])
+            if point.name not in loc_to_point:
+                report_func({'ERROR'}, 'wrong point "{}"'.format(point.name))
+                return {'CANCELLED'}
+                
+            if target.name not in loc_to_point:
+                report_func({'ERROR'}, 'wrong point "{}"'.format(target.name))
+                return {'CANCELLED'}
+                
+            links.append(Link(num, [loc_to_point[point.name].idx, loc_to_point[target.name].idx]))
+            
+    links.sort(key=lambda l: l.idx)
+    
+    for i in range(len(links)):
+        if i != links[i].idx:
+            report_func({'ERROR'}, 'link with number "{}" not found'.format(i))
+            return {'CANCELLED'}
+    
+    
+    sp.links = links
+                
     
     ret = sp.generate(file_path, report_func)
     if ret is not None:
