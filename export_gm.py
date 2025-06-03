@@ -245,7 +245,44 @@ def write_avertex0(file, pos, weight, bone_id, norm, color, tu0, tv0,):
     file.write(struct.pack('<f', tv0))
 
 
-def export_gm(context, file_path="", triangulate=False):
+def vertToString(v):
+    return '{:.10f}:{:.10f}:{:.10f}'.format(v.co.x, v.co.y, v.co.z)
+def smoothOut(verts, smooth_out_normals):
+    if not smooth_out_normals:
+        return [Vector(vertex.normal) for vertex in verts]
+        
+    order = range(len(verts))[:]
+    
+    order = sorted(order, key=lambda o: vertToString(verts[o]))
+    
+    vert_count = len(verts)
+    norms = [0] * vert_count
+    i = 0
+    
+    while(i < vert_count):
+        j = i;
+        i_str = vertToString(verts[order[i]])
+        while(j < vert_count):
+            j_str = vertToString(verts[order[j]])
+            if i_str != j_str:
+                break
+            j += 1
+        norm = [0.0, 0.0, 0.0]
+        for k in range(i, j):
+            norm[0] += verts[order[k]].normal[0]
+            norm[1] += verts[order[k]].normal[1]
+            norm[2] += verts[order[k]].normal[2]
+            
+            
+        norm = [n / (j - i) for n in norm]
+        
+        for k in range(i, j):
+            norms[order[k]] = Vector(norm)
+        i = j
+    return norms
+
+
+def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False):
     # pr = cProfile.Profile()
     # pr.enable()
 
@@ -408,7 +445,13 @@ def export_gm(context, file_path="", triangulate=False):
             raise ValueError(
                 src_obj.name + ' vertices_quantity bigger than 65536!')
 
-        for vertex in bm.verts:
+        n_vectors = smoothOut(bm.verts, smooth_out_normals)
+        
+        if len(n_vectors) != vertices_quantity:
+            raise ValueError('len(n_vectors) != vertices_quantity')
+        for i in range(vertices_quantity):
+            vertex = bm.verts[i]
+            norm = n_vectors[i]
             pos = (obj.matrix_world @ Vector(vertex.co)) - \
                 Vector(obj.parent.matrix_world.translation)
             pos.rotate(correction_export_matrix)
@@ -417,7 +460,7 @@ def export_gm(context, file_path="", triangulate=False):
             vertices.append(pos)
             obj_vertices_coords.append(pos)
 
-            norm = Vector(vertex.normal)
+            # norm = Vector(vertex.normal)
             norm.rotate(correction_export_matrix)
             if x_is_mirrored:
                 norm *= Vector([-1, 1, 1])
@@ -860,8 +903,13 @@ class ExportGm(Operator, ExportHelper):
         default=True,
     )
 
+    smooth_out_normals: BoolProperty(
+        name="Smooth out normals (experimental)",
+        default=False,
+    )
+
     def execute(self, context):
-        return export_gm(context, self.filepath, self.triangulate)
+        return export_gm(context, self.filepath, self.triangulate, self.smooth_out_normals)
 
 
 def menu_func_export(self, context):
