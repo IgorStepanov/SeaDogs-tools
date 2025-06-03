@@ -15,7 +15,7 @@ bl_info = {
     "name": "SeaDogs Merge AN",
     "description": "Merge AN files",
     "author": "Artess999/Wazar",
-    "version": (0, 0, 1),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",

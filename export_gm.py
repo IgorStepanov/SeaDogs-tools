@@ -19,7 +19,7 @@ bl_info = {
     "name": "SeaDogs GM",
     "description": "Export GM files",
     "author": "Artess999",
-    "version": (0, 9, 9),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",

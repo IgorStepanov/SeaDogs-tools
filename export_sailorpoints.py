@@ -20,7 +20,7 @@ bl_info = {
     "name": "SeaDogs SailorPoints",
     "description": "Export SailorPoints files",
     "author": "Wazar",
-    "version": (0, 9, 9),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",

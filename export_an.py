@@ -14,7 +14,7 @@ bl_info = {
     "name": "SeaDogs AN",
     "description": "Export AN files",
     "author": "Artess999",
-    "version": (0, 0, 1),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",

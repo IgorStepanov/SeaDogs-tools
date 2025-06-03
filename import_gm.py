@@ -14,7 +14,7 @@ bl_info = {
     "name": "SeaDogs GM",
     "description": "Import GM files",
     "author": "Artess999",
-    "version": (0, 0, 1),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",
@@ -299,6 +299,57 @@ jess_to_woman = {
   '46': '38',
   '47': '39',
   '48': '21',#'93'
+}
+
+
+
+woman_to_danny = {
+        '0':  '1',
+        '1':  '3',
+        '2':  '4',
+        '11': '3',
+        '12': '4',
+        '3':  '4',
+        '4':  '3',
+        '5':  '2',
+
+        '13': '7',
+        '16': '11',
+        '21': '16',
+
+        '17': '13',
+        '22': '18',
+        
+        
+        '26': '24',
+        '27': '40',
+        '28': '18',
+        '32': '70',
+        '33': '70',
+        '36': '96',
+        '37': '96',
+
+        '18': '12',
+        '23': '17',
+        '29': '17',
+        '30': '23',
+        '31': '39',
+        '34': '69',
+        '35': '69',
+        '38': '91',
+        '39': '91',
+
+        '6':  '3',
+        '14': '8',
+        '19': '14',
+        '24': '19',
+        '7':  '4',
+        '15': '9',
+        '20': '15',
+        '25': '20',
+        '8':  '6',
+        '9':  '4',
+        '10': '3'
 }
 
 potc_to_coas_man = {value: key for key, value in coas_to_potc_man.items()}
@@ -913,7 +964,8 @@ def import_gm(
     convert_potc_to_coas_man=False,
     convert_coas_to_potc_woman=False,
     convert_potc_to_coas_woman=False,
-    convert_jess_to_woman_woman=False,
+    convert_jess_to_woman=False,
+    convert_woman_to_danny=False,
     report_func=None
 ):
     file_name = os.path.basename(file_path)[:-3]
@@ -1152,9 +1204,14 @@ def import_gm(
                     first_bone_idx = potc_to_coas_woman.get(str(bone_ids[x][0]))
                     second_bone_idx = potc_to_coas_woman.get(str(bone_ids[x][1]))
                     
-                if convert_jess_to_woman_woman:
+                if convert_jess_to_woman:
                     first_bone_idx = jess_to_woman.get(str(bone_ids[x][0]))
                     second_bone_idx = jess_to_woman.get(str(bone_ids[x][1]))
+                    
+                if convert_woman_to_danny:
+                    first_bone_idx = woman_to_danny.get(str(bone_ids[x][0]))
+                    second_bone_idx = woman_to_danny.get(str(bone_ids[x][1]))  
+                    
 
                 first_bone_name = "Bone" + str(first_bone_idx)
                 second_bone_name = "Bone" + str(second_bone_idx)
@@ -1249,10 +1306,15 @@ def import_gm(
                     bone = armature_obj.pose.bones["Bone" +
                                                    potc_to_coas_woman.get(str(locator_bone_idx))]
                                                    
-                if convert_jess_to_woman_woman:
+                if convert_jess_to_woman:
                     bone = armature_obj.pose.bones["Bone" +
                                                    jess_to_woman.get(str(locator_bone_idx))]
-                                                   
+                if convert_woman_to_danny:
+                    bone = armature_obj.pose.bones["Bone" +
+                                                   woman_to_danny.get(str(locator_bone_idx))]
+                                            
+
+                                            
 
                 locator.parent_bone = bone.name
                 locator.parent_type = 'BONE'
@@ -1321,10 +1383,16 @@ class ImportGm(Operator, ImportHelper):
         default=False,
     )
     
-    convert_jess_to_woman_woman: BoolProperty(
+    convert_jess_to_woman: BoolProperty(
         name="Convert Jess skeleton to generic woman",
         default=False,
     )
+    
+    convert_woman_to_danny: BoolProperty(
+        name="Convert woman skeleton to Danny",
+        default=False,
+    )
+    
     
 
     def execute(self, context):
@@ -1341,7 +1409,8 @@ class ImportGm(Operator, ImportHelper):
                 convert_potc_to_coas_man=self.convert_potc_to_coas_man,
                 convert_coas_to_potc_woman=self.convert_coas_to_potc_woman,
                 convert_potc_to_coas_woman=self.convert_potc_to_coas_woman,
-                convert_jess_to_woman_woman=self.convert_jess_to_woman_woman,
+                convert_jess_to_woman=self.convert_jess_to_woman,
+                convert_woman_to_danny=self.convert_woman_to_danny,
                 report_func=self.report
             )
 
