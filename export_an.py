@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import struct
 import time
 
@@ -22,7 +23,6 @@ bl_info = {
     "category": "Export",
 }
 
-
 correction_export_matrix = axis_conversion(
     from_forward='Y', from_up='Z', to_forward='X', to_up='Y')
 
@@ -41,6 +41,8 @@ def write_d3dx_quaternion(file, value):
     file.write(struct.pack('<f', z))
     file.write(struct.pack('<f', w))
 
+def remove_blender_name_postfix(name):
+    return re.sub(r'\.\d{3}', '', name)
 
 def export_an(context, file_path=""):
     armature_obj = bpy.context.view_layer.objects.active
@@ -48,9 +50,7 @@ def export_an(context, file_path=""):
     pose_bones = armature_obj.pose.bones
     action = armature_obj.animation_data.action
     slot = armature_obj.animation_data.action_slot
-    
-    
-    
+
     fcurves = action.layers[0].strips[0].channelbag(slot).fcurves
 
     frames_quantity = bpy.context.scene.frame_end + 1
@@ -178,6 +178,14 @@ class ExportAn(Operator, ExportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+
+    def invoke(self, context, event):
+        selected_object = context.view_layer.objects.active
+        if selected_object:
+            collection = selected_object.users_collection[0]
+            self.filepath = remove_blender_name_postfix(collection.name) + self.filename_ext
+        
+        return super().invoke(context, event)
 
     def execute(self, context):
         return export_an(context, self.filepath)

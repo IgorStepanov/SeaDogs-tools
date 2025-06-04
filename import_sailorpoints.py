@@ -190,7 +190,7 @@ def import_sailorpoints(
     if data == {'CANCELLED'}:
         return {'CANCELLED'}
 
-    collection = bpy.data.collections.new(file_name+'_SP')
+    collection = bpy.data.collections.new(file_name)
     bpy.context.scene.collection.children.link(collection)
 
     root = bpy.data.objects.new("root", None)

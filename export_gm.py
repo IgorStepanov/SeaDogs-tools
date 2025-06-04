@@ -357,7 +357,6 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
 
     for object in objects:
         if bpy.context.view_layer.objects.get(object.name):
-            print("object.name = '"+object.name+"'")
             bpy.context.view_layer.objects.active = object
             bpy.ops.object.mode_set(mode='EDIT', toggle=False)
             bpy.ops.uv.select_all(action='SELECT')
@@ -460,7 +459,6 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
             vertices.append(pos)
             obj_vertices_coords.append(pos)
 
-            # norm = Vector(vertex.normal)
             norm.rotate(correction_export_matrix)
             if x_is_mirrored:
                 norm *= Vector([-1, 1, 1])
@@ -776,12 +774,9 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
             ]
 
             if is_animated:
-                try:
-                    label_bone = next(
-                        filter(lambda x: x.name == locator.parent_bone, bones_list))
-                    label_bones[0] = bones_list.index(label_bone)
-                except StopIteration as e:
-                        print(locator.name + ' troubles!')
+                label_bone = next(
+                    filter(lambda x: x.name == locator.parent_bone, bones_list))
+                label_bones[0] = bones_list.index(label_bone)
 
             for i in range(4):
                 file.write(struct.pack('<l', label_bones[i]))
@@ -907,6 +902,14 @@ class ExportGm(Operator, ExportHelper):
         name="Smooth out normals (experimental)",
         default=False,
     )
+
+    def invoke(self, context, event):
+        selected_object = context.view_layer.objects.active
+        if selected_object:
+            collection = selected_object.users_collection[0]
+            self.filepath = remove_blender_name_postfix(collection.name) + self.filename_ext
+        
+        return super().invoke(context, event)
 
     def execute(self, context):
         return export_gm(context, self.filepath, self.triangulate, self.smooth_out_normals)

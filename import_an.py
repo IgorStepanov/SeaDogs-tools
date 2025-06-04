@@ -92,7 +92,7 @@ def parse_an(file_path=""):
         "jointsAngles": joints_angles,
     }
 
-def import_an(context, file_path=""):
+def import_an(context, file_path="", import_animation_only=False):
     file_name = os.path.basename(file_path)[:-3]
     data = parse_an(file_path)
 
@@ -112,60 +112,61 @@ def import_an(context, file_path=""):
     bpy.context.scene.frame_start = 0
     bpy.context.scene.frame_end = frames_quantity - 1
 
-    collection = bpy.data.collections.new(file_name)
-    bpy.context.scene.collection.children.link(collection)
+    if not import_animation_only:
+        collection = bpy.data.collections.new(file_name)
+        bpy.context.scene.collection.children.link(collection)
 
-    armature = bpy.data.armatures.new('armature')
-    armature_obj = bpy.data.objects.new('armature_obj', armature)
-    collection.objects.link(armature_obj)
+        armature = bpy.data.armatures.new('armature')
+        armature_obj = bpy.data.objects.new('armature_obj', armature)
+        collection.objects.link(armature_obj)
 
-    animation_data = armature_obj.animation_data_create()
-    action = bpy.data.actions.new(name="Joints_action")
-    animation_data.action = action
-    slot = action.slots.new(id_type='OBJECT', name="Joints_slot")
-    layer = action.layers.new("Joints_Layer")
-    animation_data.action_slot = slot
-    strip = layer.strips.new(type='KEYFRAME')
-    channelbag = strip.channelbag(slot, ensure=True)
-    
-    armature_obj.data.display_type = 'STICK'
+        animation_data = armature_obj.animation_data_create()
+        action = bpy.data.actions.new(name="Joints_action")
+        animation_data.action = action
+        slot = action.slots.new(id_type='OBJECT', name="Joints_slot")
+        layer = action.layers.new("Joints_Layer")
+        animation_data.action_slot = slot
+        strip = layer.strips.new(type='KEYFRAME')
+        channelbag = strip.channelbag(slot, ensure=True)
+        
+        armature_obj.data.display_type = 'STICK'
 
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+        bpy.context.view_layer.objects.active = armature_obj
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
-    armature_edit_bones = armature_obj.data.edit_bones
+        armature_edit_bones = armature_obj.data.edit_bones
 
-    bones_arr = []
+        bones_arr = []
 
-    for idx in range(joints_quantity):
-        bone = armature_edit_bones.new("Bone" + str(idx))
+        for idx in range(joints_quantity):
+            bone = armature_edit_bones.new("Bone" + str(idx))
 
-        if idx != 0:
-            bone.parent = bones_arr[parent_indices[idx]]
+            if idx != 0:
+                bone.parent = bones_arr[parent_indices[idx]]
 
-        pos = mathutils.Vector(start_joints_positions[idx])
-        prepared_pos = mathutils.Vector(blender_start_joints_positions[idx])
-        parent_pos = mathutils.Vector(
-            blender_start_joints_positions[parent_indices[idx]])
+            pos = mathutils.Vector(start_joints_positions[idx])
+            prepared_pos = mathutils.Vector(blender_start_joints_positions[idx])
+            parent_pos = mathutils.Vector(
+                blender_start_joints_positions[parent_indices[idx]])
 
-        if idx in parent_indices:
-            child_idx = parent_indices.index(idx)
-            child_pos = mathutils.Vector(
-                blender_start_joints_positions[child_idx])
-        else:
-            child_pos = mathutils.Vector(
-                prepared_pos) + mathutils.Vector([0, 0.00001, 0])
+            if idx in parent_indices:
+                child_idx = parent_indices.index(idx)
+                child_pos = mathutils.Vector(
+                    blender_start_joints_positions[child_idx])
+            else:
+                child_pos = mathutils.Vector(
+                    prepared_pos) + mathutils.Vector([0, 0.00001, 0])
 
-        bone.head = (prepared_pos[0],
-                     prepared_pos[1] - 0.00001, prepared_pos[2])
-        bone.tail = (prepared_pos[0],
-                     prepared_pos[1] + 0.00001, prepared_pos[2])
+            bone.head = (prepared_pos[0],
+                prepared_pos[1] - 0.00001, prepared_pos[2])
+            bone.tail = (prepared_pos[0],
+                prepared_pos[1] + 0.00001, prepared_pos[2])
 
-        bone.matrix = correction_matrix.to_4x4() @ bone.matrix
+            bone.matrix = correction_matrix.to_4x4() @ bone.matrix
 
-        bones_arr.append(bone)
+            bones_arr.append(bone)
 
-    bpy.ops.object.mode_set(mode='POSE', toggle=False)
+        bpy.ops.object.mode_set(mode='POSE', toggle=False)
 
     for bone_idx in range(joints_quantity):
         bone_name = "Bone" + str(bone_idx)
@@ -197,10 +198,10 @@ def import_an(context, file_path=""):
 
             fc.update()
 
-    """ armature_obj.rotation_euler[0] = math.radians(90)
-    armature_obj.rotation_euler[2] = math.radians(90) """
-
-    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+    if not import_animation_only:
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+        """ armature_obj.rotation_euler[0] = math.radians(90)
+            armature_obj.rotation_euler[2] = math.radians(90) """
     return {'FINISHED'}
 
 
@@ -217,14 +218,20 @@ class ImportAn(Operator, ImportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+    
+    import_animation_only: BoolProperty(
+        name="Import Animation Only",
+        description="Import only the animation action without creating armature and bones",
+        default=False,
+    )
 
     def execute(self, context):
-        return import_an(context, self.filepath)
+        return import_an(context, self.filepath, self.import_animation_only)
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportAn.bl_idname,
-                         text="AN Import(.an)")
+    self.layout.operator(ImportAn.bl_idname, text="AN Import(.an)")
+    self.layout.prop(context.scene, "import_animation_only")
 
 
 def register():

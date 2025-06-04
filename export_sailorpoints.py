@@ -233,6 +233,14 @@ class ExportSailorPoints(Operator, ExportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+    
+    def invoke(self, context, event):
+        selected_object = context.view_layer.objects.active
+        if selected_object:
+            collection = selected_object.users_collection[0]
+            self.filepath = remove_blender_name_postfix(collection.name) + self.filename_ext
+            
+        return super().invoke(context, event)
 
     def execute(self, context):
         return export_sailorpoints(context, self.filepath, report_func=self.report)
