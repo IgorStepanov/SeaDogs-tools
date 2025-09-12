@@ -6,9 +6,11 @@ import time
 import bmesh
 import bpy
 import mathutils
-from bpy.props import BoolProperty, EnumProperty, StringProperty
+from bpy.props import IntProperty, BoolProperty, EnumProperty, StringProperty
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper, axis_conversion
+
+from pathlib import Path
 
 bl_info = {
     "name": "SeaDogs GM",
@@ -321,21 +323,21 @@ woman_to_danny = {
     '22': '18',
     
     
-    '26': '24',
-    '27': '40',
+    '26': '40',
+    '27': '18',
     '28': '18',
     '32': '70',
-    '33': '70',
+    '33': '40',
     '36': '96',
     '37': '96',
     
     '18': '12',
     '23': '17',
-    '29': '17',
-    '30': '23',
-    '31': '39',
+    '29': '39',
+    '30': '17',
+    '31': '17',
     '34': '69',
-    '35': '69',
+    '35': '39',
     '38': '91',
     '39': '91',
     
@@ -350,6 +352,78 @@ woman_to_danny = {
     '8':  '6',
     '9':  '4',
     '10': '3'
+}
+
+
+
+
+jess_to_danny = {
+    '0':  '1',
+    '1':  '3',
+    '12': '3',
+    '4':  '3',
+    '10': '3',
+    '16': '3',
+    
+    
+    '2':  '4',
+    '3':  '4',
+    '13': '4',
+    '9':  '4',
+    '18': '4',
+    '11': '4',
+
+    '6' :'3',
+    '15':'8',
+    '22':'14',
+    '27':'19',
+
+    '7': '4',
+    '17':'9',
+    '23':'15',
+    '28':'20',
+
+    
+    '8':  '6',
+    
+    '5':  '2',
+    '14':  '7',
+    '19':  '11',
+    '24':  '16',
+   
+    '29':  '22',
+    '36':  '38',
+    '43':  '55',
+    '48':  '68',
+    
+    
+    '20':'13',
+    '25':'18',
+    '31':'18',
+    '32':'18',
+    '30':'40',
+    '38':'40', #70?
+    '39':'40', #70?
+    '37':'70', 
+    '44':'96',
+    '45':'96',
+    
+    
+    
+    '21':'12',
+    '26':'17',
+    '34':'17',
+    '35':'17',
+    '33':'39',
+    
+    '40':'69',
+    '41':'39', #69?
+    '42':'39', #69?
+    '46':'91',
+    '47':'91'
+    
+   
+    
 }
 
 potc_to_coas_man = {value: key for key, value in coas_to_potc_man.items()}
@@ -952,6 +1026,7 @@ def get_armature_obj(file_path, collection, type='', fix_coas_man_head=False):
 
 def import_gm(
     context,
+    hull_num_int,
     file_path="",
     textures_path="",
     an_path="",
@@ -962,6 +1037,7 @@ def import_gm(
     convert_potc_to_coas_woman=False,
     convert_jess_to_woman=False,
     convert_woman_to_danny=False,
+    convert_jess_to_danny=False,
     report_func=None
 ):
     file_name = os.path.basename(file_path)[:-3]
@@ -1027,8 +1103,42 @@ def import_gm(
         material_name = None if texture_file is None else (
             collection.name + '_' + material['name'])
 
+        #-------------------------------------------------
+        #  Addition from Tosyk 4 dec 2022 START
+        #-------------------------------------------------
+        hull_num = hull_num_int
+        texture_path_found = None
+
+        for ship_dir in Path(textures_path).rglob(f'**/{file_name}'):
+            for hull_dir in ([f'hull{hull_num}',] if hull_num is not None else []) + ['hull1']:
+                if (ship_dir/hull_dir).exists() and (ship_dir/hull_dir/texture_file).exists():
+                    texture_path_found = ship_dir/hull_dir/texture_file
+                    break
+            if texture_path_found is not None:
+                break
+
+        if texture_path_found is None:
+            for ship_dir in Path(textures_path).rglob(f'**/{file_name}'):
+                for tex_file in ship_dir.rglob(f'**/{texture_file}'):
+                    texture_path_found = tex_file
+                    break
+                if texture_path_found is not None:
+                    break
+
+        if texture_path_found is None:
+            for ship_dir in Path(textures_path).rglob(f'**/{texture_file}'):
+                texture_path_found = ship_dir
+                break
+
+        texture_path_found = texture_path_found or os.path.join(textures_path, texture_file)
+        #-------------------------------------------------
+        #  Addition from Tosyk 4 dec 2022 END
+        #-------------------------------------------------
+
+
         if texture_file is not None:
-            texture_path = os.path.join(textures_path, texture_file)
+            # texture_path = os.path.join(textures_path, texture_file) # Commented out by Tosyk 4 dec 2022
+            texture_path = str(texture_path_found) # Addition from Tosyk 4 dec 2022
 
         if texture_normals_file is not None:
             texture_normals_path = os.path.join(
@@ -1207,6 +1317,11 @@ def import_gm(
                     first_bone_idx = woman_to_danny.get(str(bone_ids[x][0]))
                     second_bone_idx = woman_to_danny.get(str(bone_ids[x][1]))  
                     
+                if convert_jess_to_danny:
+                    first_bone_idx = jess_to_danny.get(str(bone_ids[x][0]))
+                    second_bone_idx = jess_to_danny.get(str(bone_ids[x][1]))
+                    
+                    
 
                 first_bone_name = "Bone" + str(first_bone_idx)
                 second_bone_name = "Bone" + str(second_bone_idx)
@@ -1307,7 +1422,9 @@ def import_gm(
                 if convert_woman_to_danny:
                     bone = armature_obj.pose.bones["Bone" +
                                                    woman_to_danny.get(str(locator_bone_idx))]
-                                            
+                if convert_jess_to_danny:
+                    bone = armature_obj.pose.bones["Bone" +
+                                                   jess_to_danny.get(str(locator_bone_idx))]                            
 
                                             
 
@@ -1388,6 +1505,22 @@ class ImportGm(Operator, ImportHelper):
         default=False,
     )
     
+    convert_jess_to_danny: BoolProperty(
+        name="Convert jess skeleton to Danny",
+        default=False,
+    )
+    
+    
+    
+    # Addition from Tosyk 4 dec 2022
+    hull_num_int : IntProperty(
+        name = "Choose Hull Number",
+        description="Set Hull Number (0 - for none hull)",
+        default = 1,
+        min = 0,
+        max = 64
+    )
+    
     
 
     def execute(self, context):
@@ -1396,6 +1529,7 @@ class ImportGm(Operator, ImportHelper):
         if os.path.isfile(an_path):
             return import_gm(
                 context,
+                self.hull_num_int, # Addition from Tosyk 4 dec 2022
                 self.filepath,
                 textures_path=textures_path,
                 an_path=an_path,
@@ -1406,10 +1540,11 @@ class ImportGm(Operator, ImportHelper):
                 convert_potc_to_coas_woman=self.convert_potc_to_coas_woman,
                 convert_jess_to_woman=self.convert_jess_to_woman,
                 convert_woman_to_danny=self.convert_woman_to_danny,
+                convert_jess_to_danny=self.convert_jess_to_danny,
                 report_func=self.report
             )
 
-        return import_gm(context, self.filepath, textures_path=textures_path, report_func=self.report)
+        return import_gm(context, self.hull_num_int, self.filepath, textures_path=textures_path, report_func=self.report)
 
 
 def menu_func_import(self, context):

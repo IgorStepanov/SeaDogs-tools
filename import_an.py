@@ -231,7 +231,7 @@ class ImportAn(Operator, ImportHelper):
 
 def menu_func_import(self, context):
     self.layout.operator(ImportAn.bl_idname, text="AN Import(.an)")
-    self.layout.prop(context.scene, "import_animation_only")
+    #self.layout.prop(context.scene, "import_animation_only")
 
 
 def register():

@@ -17,8 +17,8 @@ sys.setrecursionlimit(10000)
 
     
 bl_info = {
-    "name": "SeaDogs SailorPoints",
-    "description": "Export SailorPoints files",
+    "name": "SeaDogs Foam",
+    "description": "Export Foam files",
     "author": "Wazar",
     "version": (1, 0, 0),
     "blender": (4, 4, 1),
@@ -30,34 +30,6 @@ bl_info = {
 
 correction_export_matrix = axis_conversion(
     from_forward='Y', from_up='Z', to_forward='X', to_up='Y')
-
-point_types = {
-    'normal':    0,
-    'cannonl':   1,
-    'cannonr':   2,
-    'cannonf':   3,
-    'cannonb':   4,
-    'mast1':     5,
-    'mast2':     6,
-    'mast3':     7,
-    'mast4':     8,
-    'mast5':     9,
-    'nottarget': 10
-}
-
-point_types_r = {
-    0: 'normal',
-    1: 'cannonl',
-    2: 'cannonr',
-    3: 'cannonf',
-    4: 'cannonb',
-    5: 'mast1',
-    6: 'mast2',
-    7: 'mast3',
-    8: 'mast4',
-    9: 'mast5' ,
-    10:'nottarget'
-}
 
 
 def remove_blender_name_postfix(name):
@@ -77,47 +49,37 @@ class Link:
         self.idx = idx
 
 class Point:
-    def __init__(self, idx, matrix, point_type):
+    def __init__(self, idx, matrix, links):
         self.matrix = matrix
-        self.point_type = point_type
         self.idx = idx
+        self.links = links
 
 
-class SailorPoints:
+class Foam:
     def __init__(self):
         self.points = []
-        self.links = []
         
     def generate(self, file_path='', report_func=None):
-        for i in range(len(self.points)):
-            if self.points[i] is None:
-                report_func({'ERROR'}, 'point with number "{}" not found'.format(i))
-                return {'CANCELLED'}
-        for i in range(len(self.links)):
-            if self.links[i] is None:
-                report_func({'ERROR'}, 'link with number "{}" not found'.format(i))
-                return {'CANCELLED'}
         with open(file_path, 'w') as file:
-            file.write('[SIZE]\n')
-            file.write('points = {}\n'.format(len(self.points)))
-            file.write('links = {}\n'.format(len(self.links)))
+            file.write('[Main]\n')
+            file.write('DepthFile = {}\n'.format('!TODO'))
+            file.write('vBoxCenter = {}\n'.format('!TODO'))
+            file.write('vBoxSize = {}\n'.format('!TODO'))
             file.write('\n')
-            file.write('[POINT_DATA]\n')
+            file.write('[GraphPoints]\n')
             for i in range(len(self.points)):
                 matrix = correction_export_matrix.to_4x4() @ self.points[i].matrix
                 matrix.translation *= Vector([-1, 1, 1])
                 vec = matrix.translation
-                file.write('point {} = {:.6f},{:.6f},{:.6f},{}\n'.format(i, vec[0], vec[1], vec[2], point_types[self.points[i].point_type]))
+                links = [str(v) for v in self.points[i].links]
+                file.write('pnt{} = {:.0f},{:.0f},{},\n'.format(self.points[i].idx, vec[0], vec[2], ','.join(links)))
                 
             file.write('\n')
-            file.write('[LINK_DATA]\n')
-            for i in range(len(self.links)):
-                file.write('link {} = {},{}\n'.format(i, self.links[i].points[0], self.links[i].points[1]))
         return None
 
 
 
-def export_sailorpoints(context, file_path="", report_func=None):
+def export_foam(context, file_path="", report_func=None):
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     root = bpy.context.view_layer.objects.active
@@ -138,12 +100,12 @@ def export_sailorpoints(context, file_path="", report_func=None):
                     points.append(child)
             break
 
-   
+    points.sort(key=lambda point : remove_blender_name_postfix(point.name))
     bpy.context.scene.frame_set(0)
 
     bpy.context.scene.cursor.location = root.location
     bpy.context.view_layer.objects.active = root
-    sp = SailorPoints()
+    sp = Foam()
     sp.points = [None] * len(points)
     
     loc_to_point = {}
@@ -151,65 +113,70 @@ def export_sailorpoints(context, file_path="", report_func=None):
     for point in points:
         label_name = remove_blender_name_postfix(point.name)
         label_m = Matrix(point.matrix_world)
-        
-        parts = label_name.split('_')
 
-        if parts[0] not in point_types:
-            report_func({'ERROR'}, 'unknown point type "{}"'.format(parts[0]))
-            return {'CANCELLED'}
-        sp.points[num] = Point(num, label_m, parts[0])
+        sp.points[num] = Point(num, label_m, [])
         
-        loc_to_point[point.name] = sp.points[num]
+        loc_to_point[label_name] = sp.points[num]
         num += 1
 
     links = []
+    links_to_point_loc = {}
     num = 0
+
     for point in points:
         for con in point.constraints[:]:
             if con.type != "TRACK_TO":
                 continue
-            link_name = remove_blender_name_postfix(con.name) 
-            target = con.target
-            if target is None:
-                report_func({'ERROR'}, 'wrong link "{}"'.format(con.name))
-                return {'CANCELLED'}
+            links_to_point_loc[con.name] = point
+            links.append(con)
 
-            if point.name not in loc_to_point:
-                report_func({'ERROR'}, 'wrong point "{}"'.format(point.name))
-                return {'CANCELLED'}
-                
-            if target.name not in loc_to_point:
-                report_func({'ERROR'}, 'wrong point "{}"'.format(target.name))
-                return {'CANCELLED'}
-                
-            links.append(Link(num, [loc_to_point[point.name].idx, loc_to_point[target.name].idx]))
-            num += 1
-            
-    links.sort(key=lambda l: l.idx)
-    
-    for i in range(len(links)):
-        if i != links[i].idx:
-            report_func({'ERROR'}, 'link with number "{}" not found'.format(i))
+
+    links.sort(key=lambda con : remove_blender_name_postfix(con.name))
+
+
+    for con in links:
+        link_name = remove_blender_name_postfix(con.name) 
+
+        parts = link_name.split('_')
+        base_point_name = parts[0]
+        base_point = loc_to_point[base_point_name]
+        point = links_to_point_loc[con.name]
+        target = con.target
+        if target is None:
+            report_func({'ERROR'}, 'wrong link "{}"'.format(con.name))
             return {'CANCELLED'}
-    
-    
-    sp.links = links
-                
-    
+
+        if remove_blender_name_postfix(point.name) not in loc_to_point:
+            report_func({'ERROR'}, 'wrong point "{}"'.format(point.name))
+            return {'CANCELLED'}
+            
+        if remove_blender_name_postfix(target.name) not in loc_to_point:
+            report_func({'ERROR'}, 'wrong point "{}"'.format(target.name))
+            return {'CANCELLED'}
+
+        src_idx = loc_to_point[remove_blender_name_postfix(point.name)].idx
+        dst_idx = loc_to_point[remove_blender_name_postfix(target.name)].idx
+
+        if len(base_point.links) > 0 and base_point.links[-1] == src_idx:
+            base_point.links.append(dst_idx)
+        else:
+            base_point.links.append(src_idx)
+            base_point.links.append(dst_idx)
+
     ret = sp.generate(file_path, report_func)
     if ret is not None:
         return {'CANCELLED'}
         
 
-    print('\nSailorPoints Export finished successfully!')
+    print('\nFoam Export finished successfully!')
 
     return {'FINISHED'}
 
 
-class ExportSailorPoints(Operator, ExportHelper):
+class ExportFoam(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
-    bl_idname = "export.sailorpoints"
-    bl_label = "Export sailorpoints"
+    bl_idname = "export.foam"
+    bl_label = "Export foam"
 
     # ExportHelper mixin class uses this
     filename_ext = ".ini"
@@ -229,21 +196,21 @@ class ExportSailorPoints(Operator, ExportHelper):
         return super().invoke(context, event)
 
     def execute(self, context):
-        return export_sailorpoints(context, self.filepath, report_func=self.report)
+        return export_foam(context, self.filepath, report_func=self.report)
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportSailorPoints.bl_idname,
-                         text="SailorPoints Export(.ini)")
+    self.layout.operator(ExportFoam.bl_idname,
+                         text="Foam Export(.ini)")
 
 
 def register():
-    bpy.utils.register_class(ExportSailorPoints)
+    bpy.utils.register_class(ExportFoam)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
 
 def unregister():
-    bpy.utils.unregister_class(ExportSailorPoints)
+    bpy.utils.unregister_class(ExportFoam)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
 
 

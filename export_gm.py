@@ -27,6 +27,8 @@ bl_info = {
     "category": "Export",
 }
 
+vertex_smooth_mark_name = 'vertex_smooth_mark'
+
 correction_export_matrix = axis_conversion(
     from_forward='Y', from_up='Z', to_forward='X', to_up='Y')
 
@@ -110,6 +112,7 @@ def get_box_radius(box_center, vertices):
 
 
 def prepare_vertices_with_multiple_uvs(bm_verts, uv_layer):
+    print('prepare_vertices_with_multiple_uv')
     for vertex in bm_verts:
         uv = []
         for loop in vertex.link_loops:
@@ -119,7 +122,7 @@ def prepare_vertices_with_multiple_uvs(bm_verts, uv_layer):
                 uv = uv_layer.data[loop_index].uv
 
             if uv_layer.data[loop_index].uv != uv:
-                #print(uv, obj_uv_layer.data[loop_index].uv, loop.face.index)
+                print('mistmatch: ', uv, obj_uv_layer.data[loop_index].uv, loop.face.index)
                 #diff = uv_layer.data[loop_index].uv - uv
                 # if abs(diff[0]) >= 0.01 or abs(diff[1]) >= 0.01:
                 bmesh.utils.loop_separate(loop)
@@ -245,15 +248,19 @@ def write_avertex0(file, pos, weight, bone_id, norm, color, tu0, tv0,):
     file.write(struct.pack('<f', tv0))
 
 
-def vertToString(v):
+def vert_to_string(v):
     return '{:.10f}:{:.10f}:{:.10f}'.format(v.co.x, v.co.y, v.co.z)
-def smoothOut(verts, smooth_out_normals):
-    if not smooth_out_normals:
+def smooth_out(verts, smooth_out_normals, layer):
+
+    if layer is None and smooth_out_normals == 'marked':
+        smooth_out_normals = 'no'
+
+    if smooth_out_normals == 'no':
         return [Vector(vertex.normal) for vertex in verts]
         
     order = range(len(verts))[:]
     
-    order = sorted(order, key=lambda o: vertToString(verts[o]))
+    order = sorted(order, key=lambda o: vert_to_string(verts[o]))
     
     vert_count = len(verts)
     norms = [0] * vert_count
@@ -261,14 +268,16 @@ def smoothOut(verts, smooth_out_normals):
     
     while(i < vert_count):
         j = i;
-        i_str = vertToString(verts[order[i]])
+        i_str = vert_to_string(verts[order[i]])
         while(j < vert_count):
-            j_str = vertToString(verts[order[j]])
+            j_str = vert_to_string(verts[order[j]])
             if i_str != j_str:
                 break
             j += 1
         norm = [0.0, 0.0, 0.0]
         for k in range(i, j):
+            if smooth_out_normals == 'marked' and not verts[order[k]][layer]:
+                continue
             norm[0] += verts[order[k]].normal[0]
             norm[1] += verts[order[k]].normal[1]
             norm[2] += verts[order[k]].normal[2]
@@ -277,12 +286,16 @@ def smoothOut(verts, smooth_out_normals):
         norm = [n / (j - i) for n in norm]
         
         for k in range(i, j):
+            if smooth_out_normals == 'marked' and not verts[order[k]][layer]:
+                #print('smooth unmarked')
+                norms[order[k]] = Vector(verts[order[k]].normal)
+                continue
             norms[order[k]] = Vector(norm)
         i = j
     return norms
 
 
-def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False):
+def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False, prepare_uv=False, patch_start_pose=False):
     # pr = cProfile.Profile()
     # pr.enable()
 
@@ -352,6 +365,8 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
     x_is_mirrored = not is_animated
 
     bpy.context.scene.frame_set(0)
+    if patch_start_pose:
+        bpy.context.scene.frame_set(1)
 
     bpy.context.scene.cursor.location = root.location
 
@@ -398,21 +413,24 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
         if triangulate:
             bmesh.ops.triangulate(bm, faces=bm.faces[:])
 
+        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
         bm.verts.ensure_lookup_table()
 
         print('\nBefore Blender mesh export preparations:')
         print('Mesh name: ' + src_obj.name + ', vertices: ' +
               str(len(bm.verts)) + ', faces: ' + str(len(bm.faces)))
 
-        # prepare_vertices_with_multiple_uvs(bm.verts, obj_uv_layer)
+        if prepare_uv:
+            prepare_vertices_with_multiple_uvs(bm.verts, obj_uv_layer)
 
-        # if obj_uv_normals_layer:
-        #     prepare_vertices_with_multiple_uvs(bm.verts, obj_uv_normals_layer)
+            if obj_uv_normals_layer:
+                prepare_vertices_with_multiple_uvs(bm.verts, obj_uv_normals_layer)
 
         seams = [e for e in bm.edges if e.seam]
         bmesh.ops.split_edges(bm, edges=seams)
 
         bm.to_mesh(obj.data)
+        
         print('After Blender mesh export preparations:')
         print('Mesh name: ' + src_obj.name + ', vertices: ' +
               str(len(bm.verts)) + ', faces: ' + str(len(bm.faces)))
@@ -443,13 +461,15 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
             bpy.data.objects.remove(obj, do_unlink=True)
             raise ValueError(
                 src_obj.name + ' vertices_quantity bigger than 65536!')
-
-        n_vectors = smoothOut(bm.verts, smooth_out_normals)
+        
+        verts = bm.verts[:]
+        n_vectors = smooth_out(verts, smooth_out_normals, layer)
         
         if len(n_vectors) != vertices_quantity:
             raise ValueError('len(n_vectors) != vertices_quantity')
+
         for i in range(vertices_quantity):
-            vertex = bm.verts[i]
+            vertex = verts[i]
             norm = n_vectors[i]
             pos = (obj.matrix_world @ Vector(vertex.co)) - \
                 Vector(obj.parent.matrix_world.translation)
@@ -899,9 +919,35 @@ class ExportGm(Operator, ExportHelper):
     )
 
     smooth_out_normals: BoolProperty(
-        name="Smooth out normals (experimental)",
+        name="Smooth all normals (experimental)",
         default=False,
     )
+    
+    smooth_out_normals_marked: BoolProperty(
+        name="Smooth marked normals (experimental)",
+        default=False,
+    )
+    
+    prepare_uv: BoolProperty(
+        name="Prepare UV (experimental)",
+        default=False,
+    )
+    
+    patch_start_pose: BoolProperty(
+        name="Patch start pose(experimental)",
+        default=False,
+    )
+    
+    #smooth_out_normals_enum : bpy.props.EnumProperty(
+    #    name= "Smooth out normals (experimental)",
+    #    description="Select an option",
+    #    items=[
+    #        ('no',  "No smooth"),
+    #        ('marked',  "Only marked"),
+    #        ('all',  "Smooth all")       
+    #    ],
+    #    default='no'
+    #)
 
     def invoke(self, context, event):
         selected_object = context.view_layer.objects.active
@@ -912,7 +958,12 @@ class ExportGm(Operator, ExportHelper):
         return super().invoke(context, event)
 
     def execute(self, context):
-        return export_gm(context, self.filepath, self.triangulate, self.smooth_out_normals)
+        smooth_out_normals_enum = 'no'
+        if self.smooth_out_normals:
+            smooth_out_normals_enum = 'yes'
+        elif self.smooth_out_normals_marked:
+            smooth_out_normals_enum = 'marked'
+        return export_gm(context, self.filepath, self.triangulate, smooth_out_normals_enum, self.prepare_uv, self.patch_start_pose)
 
 
 def menu_func_export(self, context):
