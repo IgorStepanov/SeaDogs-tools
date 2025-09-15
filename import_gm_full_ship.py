@@ -525,6 +525,16 @@ def found_new_collection(coll_set, name_pattern):
 # ===========================================================
 # Function: import ship parts from gm files
 # ===========================================================
+
+
+
+def is_locator_match(obj, name):
+    return obj.type == 'EMPTY' and remove_blender_name_postfix(obj.name).lower() == name.lower()
+
+def find_the_same_name_objects(loc_name, obj_name):
+    return [o for o in bpy.context.scene.objects if o.name != loc_name and remove_blender_name_postfix(o.name).lower() == obj_name.lower()]
+
+
 def import_objects(obj_name, file, ship_name, my_tool):
     
     hull_num_int = my_tool.hull_num_int
@@ -536,10 +546,11 @@ def import_objects(obj_name, file, ship_name, my_tool):
     coll_set = set()
     for c in bpy.data.collections:
         coll_set.add(c.name)
-    for o in bpy.context.scene.objects:
-        if o.name == obj_name:
-            print(obj_name, 'object found')
 
+    for o in bpy.context.scene.objects:
+        if is_locator_match(o, obj_name):
+            print(obj_name, 'object found')
+            locator_name = o.name
             #import_gm(bpy.context, hull_num_int, file_path = file, textures_path = texs_path, report_func = report)
             getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
 
@@ -586,7 +597,7 @@ def import_objects(obj_name, file, ship_name, my_tool):
             # -----------------------------------------------------------
             # Reposition imported object to a proper dummy
             # -----------------------------------------------------------
-            target = bpy.data.objects[obj_name]
+            target = bpy.data.objects[locator_name]
             source = bpy.data.objects[root_name]
             source.location += target.matrix_world.translation - source.matrix_world.translation
 
@@ -594,7 +605,7 @@ def import_objects(obj_name, file, ship_name, my_tool):
             # -----------------------------------------------------------
             # Reparent imported object to a proper dummy
             # -----------------------------------------------------------
-            parn = bpy.data.objects[obj_name]
+            parn = bpy.data.objects[locator_name]
             chld = bpy.data.objects[root_name].children
             bpy.ops.object.select_all(action='DESELECT')
             for c in chld:
@@ -632,16 +643,19 @@ def import_objects(obj_name, file, ship_name, my_tool):
             bpy.ops.object.select_all(action='DESELECT')
 
             # Rename object
-            o_name001 = bpy.context.scene.objects.get(obj_name + '.001')
-            if o_name001:
-                bpy.data.objects[obj_name + '.001'].select_set(True)
-                for obj in bpy.context.selected_objects:
-                    obj.name = obj_name + '_ropes'
+            rope_objects = find_the_same_name_objects(locator_name, obj_name)
+
+            if len(rope_objects):
+                for obj in rope_objects:
+                    if obj.type == 'EMPTY':
+                        obj.name = obj_name + '_ropes'
 
             bpy.context.view_layer.update()
+            return True
 
     print('-------------------------------------------------------------------')
     print('')
+    return False
 
 
 def creating_rope(context, line_start, line_end, rope_num, rig_type, rig_dummy_name, ship_name, rig_obj_name):
@@ -918,7 +932,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
     # -----------------------------------------------------------
     s_name = cloth_name + '_' + type
     sail_name = obj.name
-
+    print('sail_name', sail_name)
     if fnmatch.fnmatchcase(obj.name, '*.*'):
         if fnmatch.fnmatchcase(obj.name, '*_*'):
             dot = obj.name.split('.', 1)[0]
@@ -1225,6 +1239,8 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
     for obj in bpy.context.scene.objects:
     
         sail_name = obj.name
+        if obj.type != 'EMPTY':
+            continue
         #print('Cloth start name:', clo_n)
 
         # Look for specific sail or flag name in all objects in the scene
@@ -1389,9 +1405,7 @@ def import_and_assemble_ship(context):
         # -----------------------------------------------------------
         # Collect ship part names from *.gm files into array
         # -----------------------------------------------------------
-        ob_names_arr = []
-        ob_mast_arr = []
-        ob_rey_arr = []
+        ob_names_set = set()
 
         for gm_file in Path(ship_path).rglob(f'**/*{ship_name}*.gm'):    
             #print('File path:', file)
@@ -1405,60 +1419,29 @@ def import_and_assemble_ship(context):
             #get object name from filename
             obj_name = ((file_name.lower()).replace((ship_name.lower()) + '_', ''))
             #print('Object name (without the first part): ' + obj_name)
-            
-            ob_names_arr.append(obj_name)
 
-        try:
-            ob_names_arr.remove(ship_name.lower())
-        except:
-            ob_names_arr.remove(ship_name)
+            ob_names_set.add(obj_name)
 
-        print(len(ob_names_arr), ob_names_arr)
+        ob_names_set.remove(ship_name.lower())
+
+        print(len(ob_names_set), ob_names_set)
         print('')
 
+        while True:
+            added = set()
+            for ob_name in ob_names_set:
+                file = ship_path + '\\' + ship_name + '_' + ob_name + ".gm"
+                is_added = import_objects(ob_name, file, ship_name, my_tool)
+                if is_added:
+                    added.add(ob_name)
+            if len(added) == 0:
+                break
+            ob_names_set.difference_update(added)
 
-        # -----------------------------------------------------------
-        # Import mast objects from *.gm files
-        # -----------------------------------------------------------
-        ob_mast_arr = [i for i in ob_names_arr if 'mast' in i]
-        print('Load only mast (1):',len(ob_mast_arr), 'object(s):', ob_mast_arr)
-
-        for i in range(len(ob_mast_arr)):
-            ob_name = ob_mast_arr[i]
-            #print(ob_name)
-            file = ship_path + '\\' + ship_name + '_' + (ob_mast_arr[i]) + ".gm"
-            #print(file)
-            import_objects(ob_name, file, ship_name, my_tool)
-
-
-        # -----------------------------------------------------------
-        # Import rey objects from *.gm files
-        # -----------------------------------------------------------
-        ob_rey_arr = [i for i in ob_names_arr if 'rey' in i]
-        print('Load only rey (2):', len(ob_rey_arr), 'object(s):', ob_rey_arr)
-
-        for i in range(len(ob_rey_arr)):
-            ob_name = ob_rey_arr[i]
-            #print(ob_name)
-            file = ship_path + '\\' + ship_name + '_' + (ob_rey_arr[i]) + ".gm"
-            #print(file)
-            import_objects(ob_name, file, ship_name, my_tool)
-
-
-        # -----------------------------------------------------------
-        # Import rest objects from *.gm files
-        # -----------------------------------------------------------
-        ob_names_arr = [i for i in ob_names_arr if 'mast' not in i]
-        ob_names_arr = [i for i in ob_names_arr if 'rey' not in i]
-        print('Load rest *.gm files (3):', len(ob_names_arr), 'object(s):', ob_names_arr)
-
-        for i in range(len(ob_names_arr)):
-            ob_name = ob_names_arr[i]
-            #print(ob_name)
-            file = ship_path + '\\' + ship_name + '_' + (ob_names_arr[i]) + ".gm"
-            #print(file)
-            import_objects(ob_name, file, ship_name, my_tool)
-
+        if len(ob_names_set) > 0:
+            print('Warning: ({}) has not been attached'.format(ob_names_set))
+        else:
+            print('All parts has been inserted')
 
         # -----------------------------------------------------------
         # Hide path geometry

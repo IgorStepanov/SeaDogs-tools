@@ -538,6 +538,19 @@ def read_avertex0(file):
     }
 
 
+def get_unique_name(name, s):
+    if name not in s:
+        s.add(name)
+        return name
+    
+    num = 1
+    while True:
+        alias = '{}_{:04d}'.format(name, num)
+        if alias not in s:
+            s.add(alias)
+            return alias
+        num += 1
+
 def parse_gm(file_path="", report_func=None):
     with open(file_path, mode='rb') as file:
         header_version = struct.unpack("<l", file.read(4))[0]
@@ -591,6 +604,7 @@ def parse_gm(file_path="", report_func=None):
             texture_names.append(texture_name)
 
         materials = []
+        material_names = set()
         for i in range(header_nmaterials):
             material_group_name_idx = struct.unpack("<l", file.read(4))[0]
             material_group_name = names.get(material_group_name_idx)
@@ -615,9 +629,11 @@ def parse_gm(file_path="", report_func=None):
                 if idx >= 0:
                     material_texture_names.append(texture_names[idx])
 
+            material_name_alias = get_unique_name(material_name, material_names)
+            get_unique_name
             materials.append({
                 "groupName": material_group_name,
-                "name": material_name,
+                "name": material_name_alias,
                 "diffuse": material_diffuse,
                 "specular": material_specular,
                 "gloss": material_gloss,
@@ -832,7 +848,18 @@ def parse_gm(file_path="", report_func=None):
             label_group_name = label.get("groupName")
             label_m = label.get("m")
             label_bones = label.get("bones")
+            label_name_new = label_name.split('.')[0]
+            label_name_new = label_name_new.split(',')[0]
+            label_group_name_new = label_group_name.split('.')[0]
+            label_group_name_new = label_group_name_new.split(',')[0]
+            if label_name_new != label_name:
+                report_func({'INFO'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_name, label_name_new))
+                label_name = label_name_new
 
+            if label_group_name_new != label_group_name:
+                report_func({'INFO'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_group_name, label_group_name_new))
+                label_group_name = label_group_name_new
+            
             if not label_group_name in locators_trees:
                 locators_trees[label_group_name] = []
             locators_trees[label_group_name].append({
