@@ -853,11 +853,11 @@ def parse_gm(file_path="", report_func=None):
             label_group_name_new = label_group_name.split('.')[0]
             label_group_name_new = label_group_name_new.split(',')[0]
             if label_name_new != label_name:
-                report_func({'INFO'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_name, label_name_new))
+                report_func({'WARNING'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_name, label_name_new))
                 label_name = label_name_new
 
             if label_group_name_new != label_group_name:
-                report_func({'INFO'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_group_name, label_group_name_new))
+                report_func({'WARNING'}, 'Warning: Name "{}" has been truncated to "{}"'.format(label_group_name, label_group_name_new))
                 label_group_name = label_group_name_new
             
             if not label_group_name in locators_trees:

@@ -805,8 +805,16 @@ convert_rules = {
 
 fix_rules = {
     'jess_fix_hair': {
-        22: lambda a, j : transform_hair_jess(a, j, 22)
-    }
+        22: lambda a, j, fn : transform_hair_jess(a, j, 22)
+    },
+    'hand_make_straight': {
+        39: lambda a, j, fn : hand_make_straight(a, j, 56, fn, 39),
+        56: lambda a, j, fn : a if fn == 0 else j[56][0],
+        69: lambda a, j, fn : hand_make_straight(a, j, 56, fn, 69),
+        40: lambda a, j, fn : hand_make_straight(a, j, 57, fn, 40),
+        57: lambda a, j, fn : a if fn == 0 else j[57][0],
+        70: lambda a, j, fn : hand_make_straight(a, j, 57, fn, 70)
+    },
 
 }
 
@@ -818,6 +826,36 @@ def transform_hair_jess(point_q, joints, bone_num):
     
     transform_q = first_needed_q @ first_real_q.inverted()
     current_needed_q = transform_q @ current_real_q
+    return current_needed_q
+    
+    
+def hand_make_straight(point_q, joints, middle_num, fn, bone_num):
+    if fn == 0:
+        return point_q
+    first_needed_q = mathutils.Quaternion((joints[middle_num][0][0], joints[middle_num][0][1], joints[middle_num][0][2], joints[middle_num][0][3]))
+    first_real_q = mathutils.Quaternion((joints[middle_num][fn][0], joints[middle_num][fn][1], joints[middle_num][fn][2], joints[middle_num][fn][3]))
+    
+    current_real_q = mathutils.Quaternion((point_q[0], point_q[1], point_q[2], point_q[3]))
+    
+    transform_q = first_real_q @ first_needed_q.inverted()
+    
+    exp_avg = (transform_q.to_exponential_map() +
+               first_needed_q.to_exponential_map()) / 2 # +
+                   #shift.to_exponential_map()) / 3
+        
+    half_transform_q = mathutils.Quaternion(exp_avg)
+    
+    current_needed_q = half_transform_q @ current_real_q
+
+
+    if bone_num == 69 and fn >= 13319 and fn <= 13345:
+        base_frame = 13324
+        base_q = mathutils.Quaternion((0.527591, -0.425861, -0.734265, -0.033846))
+        calculated_base_q = hand_make_straight(joints[69][base_frame], joints, middle_num, base_frame, -1)
+        transform_q = base_q @ calculated_base_q.inverted()
+        current_needed_q = transform_q @ current_needed_q
+
+
     return current_needed_q
     
 
@@ -1155,12 +1193,12 @@ class AN:
         self.root_bone_positions = self.data.get('rootBonePositions')
         
 
-def convert_fix_rule(fix_rule, point_q, joints, bone_num):
+def convert_fix_rule(fix_rule, point_q, joints, bone_num, frame_num):
     if fix_rule is None:
         return point_q
     if bone_num not in fix_rule:
         return point_q
-    return fix_rule[bone_num](point_q, joints)
+    return fix_rule[bone_num](point_q, joints, frame_num)
         
 def import_an(report_func, context, file_path=""):
 
@@ -1462,13 +1500,13 @@ def import_an(report_func, context, file_path=""):
                             
                         if generate_patch:
                             key_values.append(1)
-                            transform = convert_fix_rule(fix_rule, joints_angles[bone_idx][0], joints_angles, bone_idx)
+                            transform = convert_fix_rule(fix_rule, joints_angles[bone_idx][0], joints_angles, bone_idx, frame)
                             key_values.append(transform[idx])
                             break
                     else:
                         if needed_frames is None or needed_frames[frame]:
                             key_values.append(cur_idx)
-                            transform = convert_fix_rule(fix_rule, joints_angles[bone_idx][frame], joints_angles, bone_idx)
+                            transform = convert_fix_rule(fix_rule, joints_angles[bone_idx][frame], joints_angles, bone_idx, frame)
                             try:
                                 key_values.append(transform[idx])
                             except TypeError as e:
@@ -1513,13 +1551,13 @@ def import_an(report_func, context, file_path=""):
                                 transform = an_file.joints_angles[alt_bone_idx][frame]
                                 if modifiers is not None and bone_idx in modifiers:
                                     transform = modifiers[bone_idx](transform, an_file.joints_angles, frame, joints_angles)
-                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, frame + total_quantity)
                                 key_values.append(transform[idx])
                             else:
                                 transform = joints_angles[bone_idx][default_frame]
                                 if modifiers is not None and bone_idx in modifiers:
                                     transform = modifiers[bone_idx](transform, an_file.joints_angles, frame, joints_angles)
-                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, frame + total_quantity)
                                 key_values.append(transform[idx])
                     total_quantity += an_file.frames_quantity
 
@@ -1560,13 +1598,13 @@ def import_an(report_func, context, file_path=""):
                                 if convert_rule in anim_modifiers and bone_idx in anim_modifiers[convert_rule]:
                                     #transform = anim_modifiers[convert_rule][bone_idx](transform, joints_angles)
                                     transform = anim_modifiers[convert_rule][bone_idx](transform, an_files[anim_file].joints_angles[m_bone_idx], frame + frame_start, joints_angles)
-                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, frame + total_quantity)
                                 key_values.append(transform[idx])
                             else:
                                 transform = joints_angles[bone_idx][default_frame]
                                 if convert_rule in anim_modifiers and bone_idx in anim_modifiers[convert_rule]:
                                     transform = anim_modifiers[convert_rule][bone_idx](transform, an_files[anim_file].joints_angles[m_bone_idx], frame + frame_start, joints_angles)
-                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                                transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, frame + total_quantity)
                                 key_values.append(transform[idx])
                                 #key_values.append(joints_angles[bone_idx][default_frame][idx])
                     total_quantity += frame_count
@@ -1597,13 +1635,13 @@ def import_an(report_func, context, file_path=""):
                         transform = an_files[elem['first_frame'][anim_file_elem]].joints_angles[first_frame_bone_idx][elem['first_frame'][frame_elem]]
                         if first_convert_rule in anim_modifiers and bone_idx in anim_modifiers[first_convert_rule]:
                             transform = anim_modifiers[first_convert_rule][bone_idx](transform, an_files[elem['first_frame'][anim_file_elem]].joints_angles, elem['first_frame'][frame_elem], joints_angles)
-                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, total_quantity)
                         key_values.append(transform[idx])
                     else:
                         transform = joints_angles[bone_idx][default_frame]
                         if first_convert_rule in anim_modifiers and bone_idx in anim_modifiers[first_convert_rule]:
                             transform = anim_modifiers[first_convert_rule][bone_idx](transform, an_files[elem['first_frame'][anim_file_elem]].joints_angles, elem['first_frame'][frame_elem], joints_angles)
-                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, total_quantity)
                         key_values.append(transform[idx])
 
                     key_values.append(total_quantity + elem['length'] - 1)
@@ -1612,13 +1650,13 @@ def import_an(report_func, context, file_path=""):
                         transform = an_files[elem['last_frame'][anim_file_elem]].joints_angles[last_frame_bone_idx][elem['last_frame'][frame_elem]]
                         if last_convert_rule in anim_modifiers and bone_idx in anim_modifiers[last_convert_rule]:
                             transform = anim_modifiers[last_convert_rule][bone_idx](transform, an_files[elem['last_frame'][anim_file_elem]].joints_angles, elem['last_frame'][frame_elem], joints_angles)
-                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, total_quantity + elem['length'] - 1)
                         key_values.append(transform[idx])
                     else:
                         transform = joints_angles[bone_idx][default_frame]
                         if last_convert_rule in anim_modifiers and bone_idx in anim_modifiers[last_convert_rule]:
                             transform = anim_modifiers[last_convert_rule][bone_idx](transform, an_files[elem['last_frame'][anim_file_elem]].joints_angles, elem['last_frame'][frame_elem], joints_angles)
-                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx)
+                        transform = convert_fix_rule(fix_rule, transform, joints_angles, bone_idx, total_quantity + elem['length'] - 1)
                         key_values.append(transform[idx])
 
                     total_quantity += elem['length']

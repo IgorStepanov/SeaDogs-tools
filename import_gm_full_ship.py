@@ -8,11 +8,11 @@ from math import cos, sin, radians
 from mathutils import Vector, kdtree
 import functools
 from pathlib import Path
+from io import StringIO 
 
 from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty
 from bpy.types import PropertyGroup, Panel, Scene, Operator
 from bpy.utils import register_class, unregister_class
-from import_gm import import_gm
 
 bl_info = {
     "name" : "SeaDogs GM Ship Assemble",
@@ -160,6 +160,50 @@ class MyProperties(PropertyGroup):
         max = 10
         )
 
+
+class CapturingInfo(list):
+    def __enter__(self):
+        self._stdout = sys.stdout
+        sys.stdout = self._stringio = StringIO()
+        return self
+    def __exit__(self, *args):
+        self.extend(self._stringio.getvalue().splitlines())
+        
+        self.debugs = []
+        self.infos = []
+        self.warnings = []
+        self.errors = []
+        self.criticals = []
+        for cur in self._stringio.getvalue().splitlines():
+            if cur.startswith('Debug: '):
+                self.debugs.append(cur[len('Debug: '):])
+            elif cur.startswith('Info: '):
+                self.infos.append(cur[len('Info: '):])
+            elif cur.startswith('Warning: '):
+                self.warnings.append(cur[len('Warning: '):])
+            elif cur.startswith('Error: '):
+                self.errors.append(cur[len('Error: '):])
+            elif cur.startswith('Critical: '):
+                self.criticals.append(cur[len('Critical: '):])
+
+        del self._stringio    # free up some memory
+        sys.stdout = self._stdout
+
+    def print_info(self, report):
+        for cur in self.debugs:
+            report({'DEBUG'}, cur)
+
+        for cur in self.infos:
+            report({'INFO'}, cur)
+
+        for cur in self.warnings:
+            report({'WARNING'}, cur)
+
+        for cur in self.errors:
+            report({'ERROR'}, cur)
+
+        for cur in self.criticals:
+            report({'CRITICAL'}, cur)
 
 
 def find_principled_node(mtl):
@@ -552,7 +596,11 @@ def import_objects(obj_name, file, ship_name, my_tool, report):
             print(obj_name, 'object found')
             locator_name = o.name
             #import_gm(bpy.context, hull_num_int, file_path = file, textures_path = texs_path, report_func = report)
-            getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
+
+            with CapturingInfo() as output:
+                getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
+            output.print_info(report)
+            print("import output:", '\n'.join(output))
 
             coll_source = found_new_collection(coll_set, file_name)
             print('coll_source name: "{}"'.format(coll_source.name))
@@ -1282,7 +1330,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, repor
             # Define Vector for each cloth point
             if clo_t == 'd' or clo_t == 'f' or clo_t == 's' or clo_t == 'g':
                 if cp1_n is None or cp2_n is None or cp3_n is None or cp4_n is None:
-                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    report({'WARNING'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
                     continue
 
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
@@ -1297,7 +1345,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, repor
 
             elif clo_t == 't' or clo_t == 'v':
                 if cp1_n is None or cp2_n is None or cp3_n is None:
-                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    report({'WARNING'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
                     continue
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
                 s2 = bpy.data.objects[cp2_n].matrix_world.translation
@@ -1310,7 +1358,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, repor
 
             elif clo_t == 'fp' or clo_t == 'fl' or clo_t == 'fs':
                 if cp1_n is None or cp2_n is None or cp3_n is None or cp4_n is None:
-                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    report({'WARNING'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
                     continue
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
                 s2 = bpy.data.objects[cp4_n].matrix_world.translation
@@ -1405,11 +1453,18 @@ def import_and_assemble_ship(context, report):
         #import main hull
         main_hull = d + '\\' + ship_name + '.gm'
         print('Ship main hull: ' + main_hull)
-        getattr(bpy.ops, 'import').gm(
-            filepath = main_hull,
-            textures_path = texs_path,
-            hull_num_int = hull_num_int
+
+        with CapturingInfo() as output:
+            getattr(bpy.ops, 'import').gm(
+                filepath = main_hull,
+                textures_path = texs_path,
+                hull_num_int = hull_num_int
             )
+        output.print_info(report)
+        print("import output:", '\n'.join(output))
+
+
+        
         # bpy.ops.import.gm(filepath = f) doesn't work directly
         
         bpy.context.view_layer.update()
@@ -1452,7 +1507,7 @@ def import_and_assemble_ship(context, report):
             ob_names_set.difference_update(added)
 
         if len(ob_names_set) > 0:
-            report({'ERROR'}, 'Warning: ({}) has not been attached'.format(ob_names_set))
+            report({'WARNING'}, 'Warning: ({}) has not been attached'.format(ob_names_set))
         else:
             print('All parts has been inserted')
 
@@ -1720,6 +1775,7 @@ def import_and_assemble_ship(context, report):
                         break
 
                 if not found:
+                    report({'WARNING'}, 'Abort creating rope: "{}" exists, but "{}" is not in the scene'.format(rope_start_name, rope_end_name))
                     print('Abort creating rope:', rope_start_name, 'exists,', 'but', rope_end_name, 'is not in the scene')
 
             # rig for fal(s)
@@ -1741,7 +1797,27 @@ def import_and_assemble_ship(context, report):
                         break
 
                 if not found:
+                    report({'WARNING'}, 'Abort creating fal: "{}" exists, but "{}" is not in the scene'.format(fal_start_name, fal_end_name))
                     print('Abort creating rope(fal):', fal_start_name, 'exists,', 'but', fal_end_name, 'is not in the scene')
+            else:
+                rig_type = None
+                if fnmatch.fnmatchcase(obj.name, "ropee*"):
+                    rig_type = 'rope'
+                elif fnmatch.fnmatchcase(obj.name, "fale*"):
+                    rig_type = 'fal'
+                if rig_type is None:
+                    continue
+                start_name = obj.name
+                rope_num = start_name[len(rig_type)+1:]
+                # just check a pair   
+                end_name = rig_type + 'b' + rope_num
+                found = False
+                for o in bpy.context.scene.objects:
+                    if o.name == end_name:
+                        found = True
+                        break
+                if not found:
+                    report({'WARNING'}, 'Abort creating rope(fal): "{}" exists, but "{}" is not in the scene'.format(start_name, end_name))
 
     else:
         print('rig will not be created')
