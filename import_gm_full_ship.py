@@ -204,7 +204,7 @@ class ImpSEShip_Button(Operator):
         
         mytool = bpy.context.scene.my_tool
 
-        import_and_assemble_ship(context)
+        import_and_assemble_ship(context, self.report)
         return {'FINISHED'}
 
 
@@ -535,7 +535,7 @@ def find_the_same_name_objects(loc_name, obj_name):
     return [o for o in bpy.context.scene.objects if o.name != loc_name and remove_blender_name_postfix(o.name).lower() == obj_name.lower()]
 
 
-def import_objects(obj_name, file, ship_name, my_tool):
+def import_objects(obj_name, file, ship_name, my_tool, report):
     
     hull_num_int = my_tool.hull_num_int
     texs_path = my_tool.texs_path
@@ -658,7 +658,7 @@ def import_objects(obj_name, file, ship_name, my_tool):
     return False
 
 
-def creating_rope(context, line_start, line_end, rope_num, rig_type, rig_dummy_name, ship_name, rig_obj_name):
+def creating_rope(context, line_start, line_end, rope_num, rig_type, rig_dummy_name, ship_name, rig_obj_name, report):
     # -----------------------------------------------------------
     # Creating line between 2 points
     # -----------------------------------------------------------
@@ -1233,7 +1233,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
     bpy.context.view_layer.update()
 
 
-def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
+def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, report):
 
     # Check all objects in the scene
     for obj in bpy.context.scene.objects:
@@ -1244,7 +1244,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
         #print('Cloth start name:', clo_n)
 
         # Look for specific sail or flag name in all objects in the scene
-        if fnmatch.fnmatchcase(obj.name, clo_n + '*') or fnmatch.fnmatchcase(obj.name, clo_n):
+        if fnmatch.fnmatchcase(obj.name.lower(), clo_n + '*') or fnmatch.fnmatchcase(obj.name.lower(), clo_n):
 
             #select sail
             root_ob = bpy.context.scene.objects[sail_name] # Get the object
@@ -1257,7 +1257,10 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
 
             # List of object references
             objs = bpy.context.selected_objects
-
+            cp1_n = None
+            cp2_n = None
+            cp3_n = None
+            cp4_n = None
             # If target found and object list not empty
             if objs:
 
@@ -1265,19 +1268,23 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
                 # these dummies will angle points for creating sail mesh.
                 # cp - for cloth point
                 for o in objs:
-                    if fnmatch.fnmatchcase(o.name, clo_ch_n + '1*'):
+                    if fnmatch.fnmatchcase(o.name.lower(), clo_ch_n + '1*'):
                         cp1_n = o.name
-                    elif fnmatch.fnmatchcase(o.name, clo_ch_n + '2*'):
+                    elif fnmatch.fnmatchcase(o.name.lower(), clo_ch_n + '2*'):
                         cp2_n = o.name
-                    elif fnmatch.fnmatchcase(o.name, clo_ch_n + '3*'):
+                    elif fnmatch.fnmatchcase(o.name.lower(), clo_ch_n + '3*'):
                         cp3_n = o.name
-                    elif fnmatch.fnmatchcase(o.name, clo_ch_n + '4*'):
+                    elif fnmatch.fnmatchcase(o.name.lower(), clo_ch_n + '4*'):
                         cp4_n = o.name
                     else:
                         print(clo_n, 'has no cloth points')
 
             # Define Vector for each cloth point
             if clo_t == 'd' or clo_t == 'f' or clo_t == 's' or clo_t == 'g':
+                if cp1_n is None or cp2_n is None or cp3_n is None or cp4_n is None:
+                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    continue
+
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
                 s2 = bpy.data.objects[cp2_n].matrix_world.translation
                 s3 = bpy.data.objects[cp3_n].matrix_world.translation
@@ -1289,6 +1296,9 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
                 print('Vertex ID3:', clo_ch_n + '4:', cp4_n, s4)
 
             elif clo_t == 't' or clo_t == 'v':
+                if cp1_n is None or cp2_n is None or cp3_n is None:
+                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    continue
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
                 s2 = bpy.data.objects[cp2_n].matrix_world.translation
                 s3 = bpy.data.objects[cp3_n].matrix_world.translation
@@ -1299,6 +1309,9 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
                 print('Vertex ID2:', clo_ch_n + '3:', cp3_n, s3)
 
             elif clo_t == 'fp' or clo_t == 'fl' or clo_t == 'fs':
+                if cp1_n is None or cp2_n is None or cp3_n is None or cp4_n is None:
+                    report({'ERROR'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
+                    continue
                 s1 = bpy.data.objects[cp1_n].matrix_world.translation
                 s2 = bpy.data.objects[cp4_n].matrix_world.translation
                 s3 = bpy.data.objects[cp3_n].matrix_world.translation
@@ -1325,7 +1338,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t):
             print('')
 
 
-def create_dummy(collection_name, dummy_name, dummy_parent_name, dummy_location):
+def create_dummy(collection_name, dummy_name, dummy_parent_name, dummy_location, report):
 
     # Set target collection to a known collection 
     coll_target = bpy.context.scene.collection.children.get(collection_name)
@@ -1352,7 +1365,7 @@ def get_wind_object():
             break
     return result
 
-def import_and_assemble_ship(context):
+def import_and_assemble_ship(context, report):
 
     my_tool = context.scene.my_tool
     gen_rig_bool = my_tool.gen_rig_bool
@@ -1431,7 +1444,7 @@ def import_and_assemble_ship(context):
             added = set()
             for ob_name in ob_names_set:
                 file = ship_path + '\\' + ship_name + '_' + ob_name + ".gm"
-                is_added = import_objects(ob_name, file, ship_name, my_tool)
+                is_added = import_objects(ob_name, file, ship_name, my_tool, report)
                 if is_added:
                     added.add(ob_name)
             if len(added) == 0:
@@ -1439,7 +1452,7 @@ def import_and_assemble_ship(context):
             ob_names_set.difference_update(added)
 
         if len(ob_names_set) > 0:
-            print('Warning: ({}) has not been attached'.format(ob_names_set))
+            report({'ERROR'}, 'Warning: ({}) has not been attached'.format(ob_names_set))
         else:
             print('All parts has been inserted')
 
@@ -1512,11 +1525,11 @@ def import_and_assemble_ship(context):
 
                 # Create dummy helper for right bottom vant point (vp_rm_n)
                 v4_loc = v2 - (v2-v1)*v_height + Vector((-v_shift*(-1 if v2.y < 0 else 1),0,0))
-                create_dummy(ship_name, vp_rm_n, vants_dummy_name, v4_loc)
+                create_dummy(ship_name, vp_rm_n, vants_dummy_name, v4_loc, report)
                 
                 # Create dummy helper for left bottom vant point (vp_lm_n)
                 v5_loc = v3 - (v3-v1)*v_height + Vector((v_shift*(-1 if v3.y < 0 else 1),0,0))
-                create_dummy(ship_name, vp_lm_n, vants_dummy_name, v5_loc)
+                create_dummy(ship_name, vp_lm_n, vants_dummy_name, v5_loc, report)
 
                 v4 = bpy.data.objects[vp_rm_n].matrix_world.translation
                 v5 = bpy.data.objects[vp_lm_n].matrix_world.translation
@@ -1524,7 +1537,7 @@ def import_and_assemble_ship(context):
 
                 for i in range(len(vp_add_arr)):
                     vp_add_loc = v4 + ((v5-v4)/3) * (vp_add_arr[i])
-                    create_dummy(ship_name, vp_add_n + str(vp_add_arr[i]), vants_dummy_name, vp_add_loc)
+                    create_dummy(ship_name, vp_add_n + str(vp_add_arr[i]), vants_dummy_name, vp_add_loc, report)
 
 
 
@@ -1702,7 +1715,7 @@ def import_and_assemble_ship(context):
                 found = False
                 for o in bpy.context.scene.objects:
                     if o.name == rope_end_name:
-                        creating_rope(context, rope_start_name, rope_end_name, rope_num, rig_type, rig_dummy_name, ship_name, '')
+                        creating_rope(context, rope_start_name, rope_end_name, rope_num, rig_type, rig_dummy_name, ship_name, '', report)
                         found = True
                         break
 
@@ -1723,7 +1736,7 @@ def import_and_assemble_ship(context):
                 found = False
                 for o in bpy.context.scene.objects:
                     if o.name == fal_end_name:
-                        creating_rope(context, fal_start_name, fal_end_name, fal_num, rig_type, rig_dummy_name, ship_name, '')
+                        creating_rope(context, fal_start_name, fal_end_name, fal_num, rig_type, rig_dummy_name, ship_name, '', report)
                         found = True
                         break
 
@@ -1744,17 +1757,17 @@ def import_and_assemble_ship(context):
     f_ch = 'f'
     
     if gen_sails_bool:
-        define_sail_or_flag_points(ship_name, my_tool, 'saild', s_ch, 'd') # 4 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sailf', s_ch, 'f') # 4 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sails', s_ch, 's') # 4 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sailg', s_ch, 'g') # 4 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sailt', s_ch, 't') # 3 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sailv', s_ch, 'v') # 3 points
+        define_sail_or_flag_points(ship_name, my_tool, 'saild', s_ch, 'd', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sailf', s_ch, 'f', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sails', s_ch, 's', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sailg', s_ch, 'g', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sailt', s_ch, 't', report) # 3 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sailv', s_ch, 'v', report) # 3 points
     if gen_penn_bool:
-        define_sail_or_flag_points(ship_name, my_tool, 'penn', f_ch, 'fp') # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'penn', f_ch, 'fp', report) # 4 points
     if gen_flag_bool:
-        define_sail_or_flag_points(ship_name, my_tool, 'flag', f_ch, 'fl') # 4 points
-        define_sail_or_flag_points(ship_name, my_tool, 'sflag', f_ch, 'fs') # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'flag', f_ch, 'fl', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sflag', f_ch, 'fs', report) # 4 points
 
 
     # -----------------------------------------------------------
