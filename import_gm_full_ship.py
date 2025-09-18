@@ -85,6 +85,12 @@ class MyProperties(PropertyGroup):
         description="Import ship geometry",
         default = True
         )
+    
+    load_multiple_coll_bool : BoolProperty(
+        name="Load to multiple collections",
+        description="Load to multiple collections for exporting",
+        default = False
+        )
 
     gen_vants_bool : BoolProperty(
         name="Generate vant(s) by given empties coordinates.",
@@ -161,49 +167,33 @@ class MyProperties(PropertyGroup):
         )
 
 
-class CapturingInfo(list):
+class CapturingInfo():
+    def __init__(self, report):
+        self.report = report
+
     def __enter__(self):
         self._stdout = sys.stdout
+        
         sys.stdout = self._stringio = StringIO()
         return self
     def __exit__(self, *args):
-        self.extend(self._stringio.getvalue().splitlines())
-        
-        self.debugs = []
-        self.infos = []
-        self.warnings = []
-        self.errors = []
-        self.criticals = []
-        for cur in self._stringio.getvalue().splitlines():
-            if cur.startswith('Debug: '):
-                self.debugs.append(cur[len('Debug: '):])
-            elif cur.startswith('Info: '):
-                self.infos.append(cur[len('Info: '):])
-            elif cur.startswith('Warning: '):
-                self.warnings.append(cur[len('Warning: '):])
-            elif cur.startswith('Error: '):
-                self.errors.append(cur[len('Error: '):])
-            elif cur.startswith('Critical: '):
-                self.criticals.append(cur[len('Critical: '):])
-
-        del self._stringio    # free up some memory
         sys.stdout = self._stdout
 
-    def print_info(self, report):
-        for cur in self.debugs:
-            report({'DEBUG'}, cur)
+        for cur in self._stringio.getvalue().splitlines():
+            if cur.startswith('Debug: '):
+                self.report({'DEBUG'}, cur[len('Debug: '):])
+            elif cur.startswith('Info: '):
+                self.report({'INFO'}, cur[len('Info: '):])
+            elif cur.startswith('Warning: '):
+                self.report({'WARNING'}, cur[len('Warning: '):])
+            elif cur.startswith('Error: '):
+                self.report({'ERROR'}, cur[len('Error: '):])
+            elif cur.startswith('Critical: '):
+                self.report({'CRITICAL'}, cur[len('Critical: '):])
+            else:
+                print(cur)
 
-        for cur in self.infos:
-            report({'INFO'}, cur)
-
-        for cur in self.warnings:
-            report({'WARNING'}, cur)
-
-        for cur in self.errors:
-            report({'ERROR'}, cur)
-
-        for cur in self.criticals:
-            report({'CRITICAL'}, cur)
+        del self._stringio    # free up some memory
 
 
 def find_principled_node(mtl):
@@ -318,8 +308,11 @@ class SETUP_PT_ImpSEShip(MAIN_PT_ImpSEShip, Panel):
         box1 = layout.box()
         row1 = box1.row()
         colM = row1.column(align=False)
+
+
+        colM.prop(mytool, "load_multiple_coll_bool", text="Load to multiple collections")
         colM.prop(mytool, "gen_rig_bool", text="Generate Rig (blender math)")
-#        colM.prop(mytool, "gen_vants_bool", text="Generate Vants (blender math)")
+        colM.prop(mytool, "gen_vants_bool", text="Generate Vants (blender math)")
         colM.prop(mytool, "gen_sails_bool", text="Generate Sails (blender math)")
         colM.prop(mytool, "gen_flag_bool", text="Generate Flags (blender math)")
         colM.prop(mytool, "gen_penn_bool", text="Generate Pennants (blender math)")
@@ -573,14 +566,14 @@ def found_new_collection(coll_set, name_pattern):
 
 
 def is_locator_match(obj, name):
-    return obj.type == 'EMPTY' and remove_blender_name_postfix(obj.name).lower() == name.lower()
+    return obj.type == 'EMPTY' and len(obj.children) == 0 and remove_blender_name_postfix(obj.name).lower() == name.lower()
 
 def find_the_same_name_objects(loc_name, obj_name):
     return [o for o in bpy.context.scene.objects if o.name != loc_name and remove_blender_name_postfix(o.name).lower() == obj_name.lower()]
 
 
 def import_objects(obj_name, file, ship_name, my_tool, report):
-    
+    load_multiple_coll_bool = my_tool.load_multiple_coll_bool
     hull_num_int = my_tool.hull_num_int
     texs_path = my_tool.texs_path
     ship_path = my_tool.ship_path
@@ -597,10 +590,8 @@ def import_objects(obj_name, file, ship_name, my_tool, report):
             locator_name = o.name
             #import_gm(bpy.context, hull_num_int, file_path = file, textures_path = texs_path, report_func = report)
 
-            with CapturingInfo() as output:
+            with CapturingInfo(report) as _:
                 getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
-            output.print_info(report)
-            print("import output:", '\n'.join(output))
 
             coll_source = found_new_collection(coll_set, file_name)
             print('coll_source name: "{}"'.format(coll_source.name))
@@ -614,32 +605,34 @@ def import_objects(obj_name, file, ship_name, my_tool, report):
             # collection
             # -----------------------------------------------------------
 
-            # Set target collection to a known collection 
-            coll_target = bpy.context.scene.collection.children.get(ship_name)
 
-            #select root and then its childrens
-            root_ob = bpy.context.scene.objects[root_name] # Get the object
-            bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
-            bpy.context.view_layer.objects.active = root_ob # Make the cube the active object 
-            root_ob.select_set(True)
+            if not load_multiple_coll_bool:
+                # Set target collection to a known collection 
+                coll_target = bpy.context.scene.collection.children.get(ship_name)
 
-            bpy.ops.object.select_grouped(type='CHILDREN_RECURSIVE')
+                #select root and then its childrens
+                root_ob = bpy.context.scene.objects[root_name] # Get the object
+                bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
+                bpy.context.view_layer.objects.active = root_ob # Make the cube the active object 
+                root_ob.select_set(True)
 
-            # List of object references
-            objs = bpy.context.selected_objects
+                bpy.ops.object.select_grouped(type='CHILDREN_RECURSIVE')
 
-            # If target found and object list not empty
-            if coll_target and objs:
+                # List of object references
+                objs = bpy.context.selected_objects
 
-                # Loop through all objects
-                for o in objs:
-                    # Loop through all collections the obj is linked to
-                    for coll in o.users_collection:
-                        # Unlink the object
-                        coll.objects.unlink(o)
+                # If target found and object list not empty
+                if coll_target and objs:
 
-                    # Link each object to the target collection
-                    coll_target.objects.link(o)
+                    # Loop through all objects
+                    for o in objs:
+                        # Loop through all collections the obj is linked to
+                        for coll in o.users_collection:
+                            # Unlink the object
+                            coll.objects.unlink(o)
+
+                        # Link each object to the target collection
+                        coll_target.objects.link(o)
 
 
             # -----------------------------------------------------------
@@ -649,54 +642,54 @@ def import_objects(obj_name, file, ship_name, my_tool, report):
             source = bpy.data.objects[root_name]
             source.location += target.matrix_world.translation - source.matrix_world.translation
 
+            if not load_multiple_coll_bool:
+                # -----------------------------------------------------------
+                # Reparent imported object to a proper dummy
+                # -----------------------------------------------------------
+                parn = bpy.data.objects[locator_name]
+                chld = bpy.data.objects[root_name].children
+                bpy.ops.object.select_all(action='DESELECT')
+                for c in chld:
+                    c.select_set(True)
+                bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+                bpy.ops.object.select_all(action='DESELECT')
+                for c in chld:
+                    c.select_set(True)
+                parn.select_set(True)
+                bpy.context.view_layer.objects.active = parn
+                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+                bpy.ops.object.select_all(action='DESELECT')
 
-            # -----------------------------------------------------------
-            # Reparent imported object to a proper dummy
-            # -----------------------------------------------------------
-            parn = bpy.data.objects[locator_name]
-            chld = bpy.data.objects[root_name].children
-            bpy.ops.object.select_all(action='DESELECT')
-            for c in chld:
-                c.select_set(True)
-            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-            bpy.ops.object.select_all(action='DESELECT')
-            for c in chld:
-                c.select_set(True)
-            parn.select_set(True)
-            bpy.context.view_layer.objects.active = parn
-            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-            bpy.ops.object.select_all(action='DESELECT')
+                # -----------------------------------------------------------
+                # Remove redundant collection
+                # -----------------------------------------------------------
 
-            # -----------------------------------------------------------
-            # Remove redundant collection
-            # -----------------------------------------------------------
+                #deselect all
+                bpy.ops.object.select_all(action='DESELECT')
 
-            #deselect all
-            bpy.ops.object.select_all(action='DESELECT')
-
-            # Remove collection hierarchy
-            collection = bpy.data.collections.get(file_name)
-             
-            for obj in collection.objects:
-                bpy.data.objects.remove(obj, do_unlink=True)
+                # Remove collection hierarchy
+                collection = bpy.data.collections.get(file_name)
                 
-            bpy.data.collections.remove(collection)
+                for obj in collection.objects:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                    
+                bpy.data.collections.remove(collection)
 
 
-            # -----------------------------------------------------------
-            # Rename internal dummy with same name to '*_rope'
-            # -----------------------------------------------------------
+                # -----------------------------------------------------------
+                # Rename internal dummy with same name to '*_rope'
+                # -----------------------------------------------------------
 
-            # Deselect all
-            bpy.ops.object.select_all(action='DESELECT')
+                # Deselect all
+                bpy.ops.object.select_all(action='DESELECT')
 
-            # Rename object
-            rope_objects = find_the_same_name_objects(locator_name, obj_name)
+                # Rename object
+                rope_objects = find_the_same_name_objects(locator_name, obj_name)
 
-            if len(rope_objects):
-                for obj in rope_objects:
-                    if obj.type == 'EMPTY':
-                        obj.name = obj_name + '_ropes'
+                if len(rope_objects):
+                    for obj in rope_objects:
+                        if obj.type == 'EMPTY' and len(obj.children) > 0:
+                            obj.name = obj_name + '_ropes'
 
             bpy.context.view_layer.update()
             return True
@@ -885,7 +878,6 @@ def get_verts_in_line(v1, v2, sailMsh):
 # Function: apply all modifiers
 # ===========================================================
 def apply_m(sail_o):
-
     # pick any object
     obj = bpy.data.objects[sail_o]
 
@@ -897,6 +889,9 @@ def apply_m(sail_o):
         bpy.ops.object.modifier_apply(modifier=modifier.name)
 
 
+
+
+def remove_wind():
     # Remove wind
     wind_obj = get_wind_object()
     if wind_obj is not None:
@@ -950,7 +945,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
         edges = []
         faces = [(0, 1, 2)]
         cloth_name = 'sail'
-    elif type == 'd' or type == 'f' or type == 's' or type == 'g':
+    elif type == 'd' or type == 'f' or type == 's' or type == 'g' or type == 'n':
         vertices = [s1, s2, s3, s4]
         edges = []
         faces = [(0, 1, 2, 3)]
@@ -1068,7 +1063,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
 
 
     # Defines the pivot, scale and rotate UVs
-    if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g':
+    if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g' or type == 'n':
         pivot = Vector( (0, 0.505) )
         scale = Vector( (1, -1.02492) )
 
@@ -1098,7 +1093,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
     # -----------------------------------------------------------
     
     # Set texture
-    if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g':
+    if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g' or type == 'n':
         mat_name = ship_name + '_Sail_Defaul_Mat'
         texture_file = sail_tex_def_str
 
@@ -1240,7 +1235,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
 
             if type == 't' or type == 'v':
                 indices = [index_s1, index_s2, index_s3] + other_indices
-            elif type == 'd' or type == 'f' or type == 's' or type == 'g':
+            elif type == 'd' or type == 'f' or type == 's' or type == 'g' or type == 'n':
                 indices = [index_s1, index_s2, index_s3, index_s4] + other_indices
             elif type == 'fp' or type == 'fl' or type == 'fs':
                 indices = [index_s1, index_s2] + other_indices
@@ -1259,7 +1254,7 @@ def create_sail( s1, s2, s3, s4, type, obj, my_tool, ship_name):
             sailObj.modifiers.new('Cloth', 'CLOTH')
             sailObj.modifiers["Cloth"].settings.vertex_group_mass = vg_name
 
-            if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g':
+            if type == 't' or type == 'v' or type == 'd' or type == 'f' or type == 's' or type == 'g' or type == 'n':
                 sailObj.modifiers["Cloth"].settings.mass = 0.3 #kg
                 sailObj.modifiers["Cloth"].settings.tension_stiffness = 15.0
                 sailObj.modifiers["Cloth"].settings.compression_stiffness = 15.0
@@ -1328,7 +1323,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, repor
                         print(clo_n, 'has no cloth points')
 
             # Define Vector for each cloth point
-            if clo_t == 'd' or clo_t == 'f' or clo_t == 's' or clo_t == 'g':
+            if clo_t == 'd' or clo_t == 'f' or clo_t == 's' or clo_t == 'g' or clo_t == 'n':
                 if cp1_n is None or cp2_n is None or cp3_n is None or cp4_n is None:
                     report({'WARNING'}, 'wrong sail "{}"; children: [{}]'.format(sail_name, [o.name for o in objs]))
                     continue
@@ -1454,14 +1449,12 @@ def import_and_assemble_ship(context, report):
         main_hull = d + '\\' + ship_name + '.gm'
         print('Ship main hull: ' + main_hull)
 
-        with CapturingInfo() as output:
+        with CapturingInfo(report) as _:
             getattr(bpy.ops, 'import').gm(
                 filepath = main_hull,
                 textures_path = texs_path,
                 hull_num_int = hull_num_int
             )
-        output.print_info(report)
-        print("import output:", '\n'.join(output))
 
 
         
@@ -1837,6 +1830,7 @@ def import_and_assemble_ship(context, report):
         define_sail_or_flag_points(ship_name, my_tool, 'sailf', s_ch, 'f', report) # 4 points
         define_sail_or_flag_points(ship_name, my_tool, 'sails', s_ch, 's', report) # 4 points
         define_sail_or_flag_points(ship_name, my_tool, 'sailg', s_ch, 'g', report) # 4 points
+        define_sail_or_flag_points(ship_name, my_tool, 'sailn', s_ch, 'n', report) # 4 points
         define_sail_or_flag_points(ship_name, my_tool, 'sailt', s_ch, 't', report) # 3 points
         define_sail_or_flag_points(ship_name, my_tool, 'sailv', s_ch, 'v', report) # 3 points
     if gen_penn_bool:
@@ -1849,6 +1843,7 @@ def import_and_assemble_ship(context, report):
     # -----------------------------------------------------------
     # Animate sails
     # -----------------------------------------------------------
+    print('===================RUN ANIMATING SAILS==============================')
     if anim_sail_bool:
         # Add wind to scene
         bpy.ops.object.effector_add(type='WIND')
@@ -1886,10 +1881,13 @@ def import_and_assemble_ship(context, report):
         for obj in bpy.context.scene.objects:
 
             # look for rectangular sail of type D
-            if fnmatch.fnmatchcase(obj.name, "sail_d*") or fnmatch.fnmatchcase(obj.name, "sail_s*") or fnmatch.fnmatchcase(obj.name, "sail_g*") or fnmatch.fnmatchcase(obj.name, "sail_f*") or fnmatch.fnmatchcase(obj.name, "sail_t*") or fnmatch.fnmatchcase(obj.name, "sail_v*") or fnmatch.fnmatchcase(obj.name, "flg_fp*") or fnmatch.fnmatchcase(obj.name, "flg_fl*") or fnmatch.fnmatchcase(obj.name, "flg_fs*"):
+            if fnmatch.fnmatchcase(obj.name, "sail_d*") or fnmatch.fnmatchcase(obj.name, "sail_s*") or fnmatch.fnmatchcase(obj.name, "sail_g*") or fnmatch.fnmatchcase(obj.name, "sail_f*") or fnmatch.fnmatchcase(obj.name, "sail_t*") or fnmatch.fnmatchcase(obj.name, "sail_v*") or fnmatch.fnmatchcase(obj.name, "sail_n*") or fnmatch.fnmatchcase(obj.name, "flg_fp*") or fnmatch.fnmatchcase(obj.name, "flg_fl*") or fnmatch.fnmatchcase(obj.name, "flg_fs*"):
 
                 # Wait 1 sec (30 frames) then apply modifiers
-                bpy.app.timers.register(functools.partial(apply_m, obj.name), first_interval=1)
+                bpy.app.timers.register(functools.partial(apply_m, obj.name), first_interval=3)
+
+        bpy.app.timers.register(functools.partial(remove_wind), first_interval=5)
+        
 
     else:
         print('Sails will not be animated')

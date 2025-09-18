@@ -1123,13 +1123,26 @@ def import_gm(
         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
         # setup our material
+
         texture_file = None if len(
             material['textureNames']) == 0 else material['textureNames'][0]
         texture_normals_file = None if len(
-            material['textureNames']) == 1 else material['textureNames'][1]
+            material['textureNames']) < 2 else material['textureNames'][1]
+
         material_name = None if texture_file is None else (
             collection.name + '_' + material['name'])
 
+
+        if texture_file is not None:
+            texture_file = texture_file.split('\\')[-1]
+            texture_file = texture_file.split('/')[-1]
+            if texture_file.endswith('.tga.tx'):
+                texture_file = texture_file[:-3]
+        if texture_normals_file is not None:
+            texture_normals_file = texture_normals_file.split('\\')[-1]
+            texture_normals_file = texture_normals_file.split('/')[-1]
+            if texture_normals_file.endswith('.tga.tx'):
+                texture_normals_file = texture_normals_file[:-3]
         #-------------------------------------------------
         #  Addition from Tosyk 4 dec 2022 START
         #-------------------------------------------------
