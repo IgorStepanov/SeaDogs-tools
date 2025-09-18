@@ -195,6 +195,7 @@ def import_sailorpoints(
 
     root = bpy.data.objects.new("root", None)
     collection.objects.link(root)
+    root['ExportType'] = 'SailorPoints'
 
     blender_objects = []
     points_locator_name = 'points'  

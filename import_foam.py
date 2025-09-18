@@ -112,6 +112,7 @@ def import_foam(
     bpy.context.scene.collection.children.link(collection)
 
     root = bpy.data.objects.new("root", None)
+    root['ExportType'] = 'FoamIsland'
     collection.objects.link(root)
 
     blender_objects = []

@@ -213,7 +213,7 @@ def import_foam(
 
     root = bpy.data.objects.new("root", None)
     collection.objects.link(root)
-
+    root['ExportType'] = 'FoamLocation'
     
     foams_locator_name = 'foams'  
     foams_locator = bpy.data.objects.new(foams_locator_name, None)

@@ -4,7 +4,6 @@ import time
 import re
 import sys
 import cProfile
-
 import bmesh
 import bpy
 from mathutils import Vector, Matrix
@@ -32,6 +31,10 @@ vertex_smooth_mark_name = 'vertex_smooth_mark'
 correction_export_matrix = axis_conversion(
     from_forward='Y', from_up='Z', to_forward='X', to_up='Y')
 
+class RDF_FLAGS:
+    FLAGS_VISIBLE_PRESENT = 1
+    FLAGS_BSP_PRESENT = 2
+    RDFFLAGS_FORCEDWORD = 0x7FFFFFFF
 
 def get_bounding_box_coords(objects, x_is_mirrored):
     bound_box = objects[0].bound_box
@@ -152,6 +155,7 @@ def get_material_data(object_data):
 
             textures = [texture, texture_normals]
 
+        print(f'textures: {textures}')
         return {
             "name": name,
             "textures": textures
@@ -295,7 +299,7 @@ def smooth_out(verts, smooth_out_normals, layer):
     return norms
 
 
-def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False, prepare_uv=False, patch_start_pose=False):
+def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False, prepare_uv=False, patch_start_pose=False, set_bsp_flag=False):
     # pr = cProfile.Profile()
     # pr.enable()
 
@@ -641,6 +645,9 @@ def export_gm(context, file_path="", triangulate=False, smooth_out_normals=False
         file.write(struct.pack('<l', header_version))
 
         header_flags = 0
+        if set_bsp_flag:
+            header_flags |= RDF_FLAGS.FLAGS_BSP_PRESENT
+
         file.write(struct.pack('<l', header_flags))
 
         globnames = prepare_globnames(
@@ -934,7 +941,12 @@ class ExportGm(Operator, ExportHelper):
     )
     
     patch_start_pose: BoolProperty(
-        name="Patch start pose(experimental)",
+        name="Patch start pose (experimental)",
+        default=False,
+    )
+
+    set_bsp_flag: BoolProperty(
+        name="Set BSP flag (experimental)",
         default=False,
     )
     
@@ -963,7 +975,7 @@ class ExportGm(Operator, ExportHelper):
             smooth_out_normals_enum = 'yes'
         elif self.smooth_out_normals_marked:
             smooth_out_normals_enum = 'marked'
-        return export_gm(context, self.filepath, self.triangulate, smooth_out_normals_enum, self.prepare_uv, self.patch_start_pose)
+        return export_gm(context, self.filepath, self.triangulate, smooth_out_normals_enum, self.prepare_uv, self.patch_start_pose, self.set_bsp_flag)
 
 
 def menu_func_export(self, context):

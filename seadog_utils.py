@@ -401,6 +401,7 @@ class SeaDogsMenu(bpy.types.Menu):
 
 
 class MarkToSmoothNormals(bpy.types.Operator):
+    bl_context = "mesh_edit"
     bl_idname = "object.mark_smooth_normals"
     bl_label = "Mark normals to smooth"
     bl_options = {'REGISTER', 'UNDO'}
@@ -428,6 +429,7 @@ class MarkToSmoothNormals(bpy.types.Operator):
 
 
 class UnMarkToSmoothNormals(bpy.types.Operator):
+    bl_context = "mesh_edit"
     bl_idname = "object.unmark_smooth_normals"
     bl_label = "Unmark normals to smooth"
     bl_options = {'REGISTER', 'UNDO'}
@@ -508,7 +510,7 @@ class SortFoams(bpy.types.Operator):
         root_object = bpy.context.view_layer.objects.active
 
         if (remove_blender_name_postfix(root_object.name) != 'root' or root_object.type != 'EMPTY'):
-            self.report({'ERROR'}, 'Root of foam collection should be selected');
+            self.report({'ERROR'}, 'Root of foam collection should be selected')
             return {'CANCELLED'}
 
         ret = sort_foams(root_object, self.report)

@@ -2,6 +2,7 @@ import os
 import bpy, bmesh
 import sys
 import re
+import subprocess
 import fnmatch
 import math
 from math import cos, sin, radians
@@ -9,7 +10,6 @@ from mathutils import Vector, kdtree
 import functools
 from pathlib import Path
 from io import StringIO 
-
 from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty
 from bpy.types import PropertyGroup, Panel, Scene, Operator
 from bpy.utils import register_class, unregister_class
@@ -165,6 +165,46 @@ class MyProperties(PropertyGroup):
         min = 0,
         max = 10
         )
+    
+    #export
+    export_ship_path : StringProperty(
+        name = "",
+        description="Choose a export directory:",
+        default="",
+        maxlen=1024,
+        subtype='DIR_PATH'
+        )
+    
+    export_triangulate: BoolProperty(
+        name="triangulate",
+        default=True,
+    )
+
+    export_smooth_out_normals: BoolProperty(
+        name="Smooth all normals (experimental)",
+        default=False,
+    )
+    
+    export_smooth_out_normals_marked: BoolProperty(
+        name="Smooth marked normals (experimental)",
+        default=False,
+    )
+    
+    export_prepare_uv: BoolProperty(
+        name="Prepare UV (experimental)",
+        default=False,
+    )
+
+    export_set_bsp_flag: BoolProperty(
+        name="Set BSP flag (experimental)",
+        default=False,
+    )
+
+    export_generate_bsp: BoolProperty(
+        name="Generate BSP (experimental)",
+        default=False,
+    )
+
 
 
 class CapturingInfo():
@@ -227,8 +267,8 @@ def get_root_for_collection(coll):
 # ------------------------------------------------------------------------
 
 class ImpSEShip_Button(Operator):
-    bl_label = "Process setings"
-    bl_idname = "impseship.main"
+    bl_label = "Build the ship"
+    bl_idname = "impseship.build_ship"
     
     def execute(self, context):
         #c = bpy.context
@@ -239,6 +279,50 @@ class ImpSEShip_Button(Operator):
         mytool = bpy.context.scene.my_tool
 
         import_and_assemble_ship(context, self.report)
+        return {'FINISHED'}
+
+
+
+class ImpSEShip_ExportButton(Operator):
+    bl_label = "Export the ship"
+    bl_idname = "impseship.export_ship"
+    
+    def execute(self, context):
+        #c = bpy.context
+        #ob = bpy.ops.object
+        #objects = bpy.data.objects
+        #scene = c.scene
+        
+        mytool = bpy.context.scene.my_tool
+
+        export_ship(context, self.report)
+        return {'FINISHED'}
+
+
+class ImpSEShip_MarkSkipBSP(Operator):
+    bl_label = "Mark to skip bsp"
+    bl_idname = "impseship.mark_skip_bsp"
+    
+    def execute(self, context):
+
+        root_object = bpy.context.view_layer.objects.active
+        if (remove_blender_name_postfix(root_object.name) != 'root' or root_object.type != 'EMPTY'):
+            self.report({'ERROR'}, 'Root of model should be selected')
+            return {'CANCELLED'}
+        root_object['SkipBSP'] = True
+        return {'FINISHED'}
+    
+class ImpSEShip_UnmarkSkipBSP(Operator):
+    bl_label = "Unmark to skip bsp"
+    bl_idname = "impseship.unmark_skip_bsp"
+    
+    def execute(self, context):
+
+        root_object = bpy.context.view_layer.objects.active
+        if (remove_blender_name_postfix(root_object.name) != 'root' or root_object.type != 'EMPTY'):
+            self.report({'ERROR'}, 'Root of model should be selected')
+            return {'CANCELLED'}
+        root_object['SkipBSP'] = False
         return {'FINISHED'}
 
 
@@ -325,7 +409,42 @@ class SETUP_PT_ImpSEShip(MAIN_PT_ImpSEShip, Panel):
 
         row = layout.row()
         row.scale_y = 2.0
-        row.operator("impseship.main")
+        row.operator("impseship.build_ship")
+
+        layout.row().separator()
+
+        col = layout.column(align=True)
+        col.label(text = "Export folder:")
+        col.prop(mytool, "export_ship_path", text="")
+
+
+        box1 = layout.box()
+        row1 = box1.row()
+        colM = row1.column(align=False)
+
+        colM.prop(mytool, "export_triangulate", text="triangulate")
+        colM.prop(mytool, "export_smooth_out_normals", text="Smooth all normals (experimental)")
+        colM.prop(mytool, "export_smooth_out_normals_marked", text="Smooth marked normals (experimental)")
+        colM.prop(mytool, "export_prepare_uv", text="Prepare UV (experimental)")
+        colM.prop(mytool, "export_set_bsp_flag", text="Set BSP flag (experimental)")
+        colM.prop(mytool, "export_generate_bsp", text="Generate BSP (experimental)")
+
+        row = layout.row()
+        row.scale_y = 2.0
+        row.operator("impseship.export_ship")
+
+        layout.row().separator()
+        row = layout.row()
+
+        colL = row.column(align=False)
+        colR = row.column(align=False)
+        colL.operator("impseship.mark_skip_bsp")
+        colL.operator("object.mark_smooth_normals")
+
+        colR.operator("impseship.unmark_skip_bsp")
+        colR.operator("object.unmark_smooth_normals")
+
+        
 
 
 # -----------------------------------------------------------
@@ -566,13 +685,35 @@ def found_new_collection(coll_set, name_pattern):
 
 
 def is_locator_match(obj, name):
-    return obj.type == 'EMPTY' and len(obj.children) == 0 and remove_blender_name_postfix(obj.name).lower() == name.lower()
+    return (obj.type == 'EMPTY' and 
+            remove_blender_name_postfix(obj.name).lower() == name.lower() and
+            obj.parent is not None and
+            remove_blender_name_postfix(obj.parent.name).lower() == 'geometry'
+        )
 
 def find_the_same_name_objects(loc_name, obj_name):
     return [o for o in bpy.context.scene.objects if o.name != loc_name and remove_blender_name_postfix(o.name).lower() == obj_name.lower()]
 
+def find_children_geometry(obj, report):
+    geometry_locator = None
+    children = []
 
-def import_objects(obj_name, file, ship_name, my_tool, report):
+    for o in obj.children:
+        if o.type == 'EMPTY' and remove_blender_name_postfix(o.name).lower() == 'geometry':
+            if geometry_locator is None:
+                geometry_locator = o
+            else:
+                report({'ERROR'}, 'multiple geometry object "{}" and "{}"'.format(geometry_locator.name, o.name))
+                return children
+            
+    if geometry_locator is None:
+        return children
+    
+    children = geometry_locator.children[:]
+    return children
+        
+
+def import_objects(o, obj_name, file, ship_name, my_tool, report):
     load_multiple_coll_bool = my_tool.load_multiple_coll_bool
     hull_num_int = my_tool.hull_num_int
     texs_path = my_tool.texs_path
@@ -583,120 +724,119 @@ def import_objects(obj_name, file, ship_name, my_tool, report):
     coll_set = set()
     for c in bpy.data.collections:
         coll_set.add(c.name)
+    children = []
 
-    for o in bpy.context.scene.objects:
-        if is_locator_match(o, obj_name):
-            print(obj_name, 'object found')
-            locator_name = o.name
-            #import_gm(bpy.context, hull_num_int, file_path = file, textures_path = texs_path, report_func = report)
+    print(obj_name, 'object found')
+    locator_name = o.name
+    #import_gm(bpy.context, hull_num_int, file_path = file, textures_path = texs_path, report_func = report)
 
-            with CapturingInfo(report) as _:
-                getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'import').gm(filepath = file, textures_path = texs_path, hull_num_int = hull_num_int)
 
-            coll_source = found_new_collection(coll_set, file_name)
-            print('coll_source name: "{}"'.format(coll_source.name))
+    coll_source = found_new_collection(coll_set, file_name)
+    print('coll_source name: "{}"'.format(coll_source.name))
+    
+    root_source = get_root_for_collection(coll_source)
+    children = find_children_geometry(root_source, report)
+    root_name = root_source.name
+
+    print('root name: "{}"'.format(root_name))
+    # -----------------------------------------------------------
+    # Set selected objects from imported objects to a proper
+    # collection
+    # -----------------------------------------------------------
+
+
+    if not load_multiple_coll_bool:
+        # Set target collection to a known collection 
+        coll_target = bpy.context.scene.collection.children.get(ship_name)
+
+        #select root and then its childrens
+        root_ob = bpy.context.scene.objects[root_name] # Get the object
+        bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
+        bpy.context.view_layer.objects.active = root_ob # Make the cube the active object 
+        root_ob.select_set(True)
+
+        bpy.ops.object.select_grouped(type='CHILDREN_RECURSIVE')
+
+        # List of object references
+        objs = bpy.context.selected_objects
+
+        # If target found and object list not empty
+        if coll_target and objs:
+
+            # Loop through all objects
+            for o in objs:
+                # Loop through all collections the obj is linked to
+                for coll in o.users_collection:
+                    # Unlink the object
+                    coll.objects.unlink(o)
+
+                # Link each object to the target collection
+                coll_target.objects.link(o)
+
+
+    # -----------------------------------------------------------
+    # Reposition imported object to a proper dummy
+    # -----------------------------------------------------------
+    target = bpy.data.objects[locator_name]
+    source = bpy.data.objects[root_name]
+    source.location += target.matrix_world.translation - source.matrix_world.translation
+
+    if not load_multiple_coll_bool:
+        # -----------------------------------------------------------
+        # Reparent imported object to a proper dummy
+        # -----------------------------------------------------------
+        parn = bpy.data.objects[locator_name]
+        chld = bpy.data.objects[root_name].children
+        bpy.ops.object.select_all(action='DESELECT')
+        for c in chld:
+            c.select_set(True)
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        bpy.ops.object.select_all(action='DESELECT')
+        for c in chld:
+            c.select_set(True)
+        parn.select_set(True)
+        bpy.context.view_layer.objects.active = parn
+        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # -----------------------------------------------------------
+        # Remove redundant collection
+        # -----------------------------------------------------------
+
+        #deselect all
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # Remove collection hierarchy
+        collection = bpy.data.collections.get(file_name)
+        
+        for obj in collection.objects:
+            bpy.data.objects.remove(obj, do_unlink=True)
             
-            root_source = get_root_for_collection(coll_source)
-            root_name = root_source.name
-
-            print('root name: "{}"'.format(root_name))
-            # -----------------------------------------------------------
-            # Set selected objects from imported objects to a proper
-            # collection
-            # -----------------------------------------------------------
+        bpy.data.collections.remove(collection)
 
 
-            if not load_multiple_coll_bool:
-                # Set target collection to a known collection 
-                coll_target = bpy.context.scene.collection.children.get(ship_name)
+        # -----------------------------------------------------------
+        # Rename internal dummy with same name to '*_rope'
+        # -----------------------------------------------------------
 
-                #select root and then its childrens
-                root_ob = bpy.context.scene.objects[root_name] # Get the object
-                bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
-                bpy.context.view_layer.objects.active = root_ob # Make the cube the active object 
-                root_ob.select_set(True)
+        # Deselect all
+        bpy.ops.object.select_all(action='DESELECT')
 
-                bpy.ops.object.select_grouped(type='CHILDREN_RECURSIVE')
+        # Rename object
+        rope_objects = find_the_same_name_objects(locator_name, obj_name)
 
-                # List of object references
-                objs = bpy.context.selected_objects
+        if len(rope_objects):
+            for obj in rope_objects:
+                if obj.type == 'EMPTY' and len(obj.children) > 0:
+                    obj.name = obj_name + '_ropes'
 
-                # If target found and object list not empty
-                if coll_target and objs:
-
-                    # Loop through all objects
-                    for o in objs:
-                        # Loop through all collections the obj is linked to
-                        for coll in o.users_collection:
-                            # Unlink the object
-                            coll.objects.unlink(o)
-
-                        # Link each object to the target collection
-                        coll_target.objects.link(o)
-
-
-            # -----------------------------------------------------------
-            # Reposition imported object to a proper dummy
-            # -----------------------------------------------------------
-            target = bpy.data.objects[locator_name]
-            source = bpy.data.objects[root_name]
-            source.location += target.matrix_world.translation - source.matrix_world.translation
-
-            if not load_multiple_coll_bool:
-                # -----------------------------------------------------------
-                # Reparent imported object to a proper dummy
-                # -----------------------------------------------------------
-                parn = bpy.data.objects[locator_name]
-                chld = bpy.data.objects[root_name].children
-                bpy.ops.object.select_all(action='DESELECT')
-                for c in chld:
-                    c.select_set(True)
-                bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-                bpy.ops.object.select_all(action='DESELECT')
-                for c in chld:
-                    c.select_set(True)
-                parn.select_set(True)
-                bpy.context.view_layer.objects.active = parn
-                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-                bpy.ops.object.select_all(action='DESELECT')
-
-                # -----------------------------------------------------------
-                # Remove redundant collection
-                # -----------------------------------------------------------
-
-                #deselect all
-                bpy.ops.object.select_all(action='DESELECT')
-
-                # Remove collection hierarchy
-                collection = bpy.data.collections.get(file_name)
-                
-                for obj in collection.objects:
-                    bpy.data.objects.remove(obj, do_unlink=True)
-                    
-                bpy.data.collections.remove(collection)
-
-
-                # -----------------------------------------------------------
-                # Rename internal dummy with same name to '*_rope'
-                # -----------------------------------------------------------
-
-                # Deselect all
-                bpy.ops.object.select_all(action='DESELECT')
-
-                # Rename object
-                rope_objects = find_the_same_name_objects(locator_name, obj_name)
-
-                if len(rope_objects):
-                    for obj in rope_objects:
-                        if obj.type == 'EMPTY' and len(obj.children) > 0:
-                            obj.name = obj_name + '_ropes'
-
-            bpy.context.view_layer.update()
-            return True
+    bpy.context.view_layer.update()
 
     print('-------------------------------------------------------------------')
     print('')
-    return False
+    return children
 
 
 def creating_rope(context, line_start, line_end, rope_num, rig_type, rig_dummy_name, ship_name, rig_obj_name, report):
@@ -1373,6 +1513,7 @@ def define_sail_or_flag_points(ship_name, my_tool, clo_n, clo_ch_n, clo_t, repor
             # 'v' for Sailv   - triangular sail
             # 's' for Sails   - rectangular sail
             # 'g' for Sailg   - rectangular sail
+            # 'n' for Sailn   - rectangular sail
             # 'fp' for penn   - rectangular flag (pennant, banner, long flag)
             # 'fl' for flag   - rectangular flag (common flag, short one)
             # 'fs' for Sflag  - rectangular flag (common flag, short one)
@@ -1407,6 +1548,220 @@ def get_wind_object():
             result = o
             break
     return result
+
+
+def export_ship(context, report):
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    export_generate_bsp = my_tool.export_generate_bsp
+    ptc_files = []
+    for coll in bpy.data.collections:
+        root = get_root_for_collection(coll)
+        if root is None:
+            continue
+        if root.hide_render:
+            continue
+        name = remove_blender_name_postfix(coll.name)
+
+        export_type = 'Model'
+        if 'ExportType' in root:
+            export_type = root['ExportType']
+
+        if export_type == 'Model':
+            export_ship_geometry(context, name, root, report)
+        elif export_type == 'SailorPoints':
+            export_ship_sailorpoints(context, name, root, report)
+        elif export_type == 'FoamIsland':
+            export_foam_island(context, name, root, report)
+        elif export_type == 'FoamLocation':
+            export_foam_location(context, name, root, report)
+        elif export_type == 'PTC':
+            my_tool.export_generate_bsp = True
+            ptc_files.append(name)
+            export_ptc(context, name, root, report)
+        else:
+            report({'ERROR', f'unknown export type {export_type}'})
+
+    d = os.path.normpath(export_ship_path)
+    generate_bsp_needed = my_tool.export_generate_bsp
+    my_tool.export_generate_bsp = export_generate_bsp
+    if generate_bsp_needed:
+        generate_bsp(d, report)
+
+        if len(ptc_files) > 0:
+            for cur in ptc_files:
+                create_ptc_from_gm(context, cur, report)
+
+        
+
+
+def export_ship_geometry(context, name, root, report):
+    print(f'exporting model {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    export_triangulate = my_tool.export_triangulate
+    export_smooth_out_normals = my_tool.export_smooth_out_normals
+    export_smooth_out_normals_marked = my_tool.export_smooth_out_normals_marked
+    export_prepare_uv = my_tool.export_prepare_uv
+    export_set_bsp_flag = my_tool.export_set_bsp_flag
+    export_generate_bsp = my_tool.export_generate_bsp
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all( action = 'DESELECT' )
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+
+    if export_generate_bsp:
+        export_set_bsp_flag = True
+
+    if 'SkipBSP' in root and root['SkipBSP']:
+        export_set_bsp_flag = False
+
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.gm')
+    
+    print(f'export path {filepath}')
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'export').gm(
+            filepath=filepath, 
+            triangulate=export_triangulate, 
+            smooth_out_normals=export_smooth_out_normals, 
+            smooth_out_normals_marked=export_smooth_out_normals_marked, 
+            prepare_uv=export_prepare_uv, 
+            set_bsp_flag=export_set_bsp_flag)
+        
+    
+
+
+def run_utilite(util_name, path, report):
+    addon_dir = os.path.dirname(os.path.realpath(__file__))
+    util_path = os.path.join(addon_dir, 'utils', util_name)
+    print(f'util_path {util_path}')
+
+    try:
+        result = subprocess.check_output([util_path, path])
+        print('{}; status: ok\n{}'.format(' '.join([util_path, path]), result.decode("unicode_escape")))
+    except subprocess.SubprocessError as e:
+        report({'ERROR'}, 'failed to run {} generator\n{}\n{}'.format(util_name, repr(e), e.output.decode("unicode_escape")))    
+    
+    #try:
+    #result = subprocess.call([util_path, path])
+    #pid=subprocess.Popen([util_path, path]).pid
+    #print(pid)
+    #print('call result "{}"'.format(result))
+    #except subprocess.SubprocessError as e:
+    #    report({'ERROR'}, 'failed to run {} generator\n{}\n"{}"'.format(util_name, repr(e), str(e.output)))
+
+
+def generate_bsp(path, report):
+    run_utilite('rebuilder.exe', path, report)
+
+def generate_ptc(path, report):
+    run_utilite('PatchCreator.exe', path, report) 
+    
+
+def export_ship_sailorpoints(context, name, root, report):
+    print(f'exporting sailorpoins {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all( action = 'DESELECT' )
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.ini')
+    
+    print(f'export path {filepath}')
+
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'export').sailorpoints(filepath=filepath)
+
+
+
+def export_foam_island(context, name, root, report):
+    print(f'exporting island foam {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all( action = 'DESELECT' )
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.ini')
+    
+    print(f'export path {filepath}')
+
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'export').foam(filepath=filepath)
+
+
+def export_foam_location(context, name, root, report):
+    print(f'exporting location foam {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all( action = 'DESELECT' )
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.ini')
+    
+    print(f'export path {filepath}')
+
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'export').foam_for_loc(filepath=filepath)
+
+
+
+def export_ptc(context, name, root, report):
+    print(f'exporting model {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+    export_triangulate = True
+    export_set_bsp_flag = True
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all( action = 'DESELECT' )
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.gm')
+    
+    print(f'export path {filepath}')
+
+    with CapturingInfo(report) as _:
+        getattr(bpy.ops, 'export').gm(
+            filepath=filepath, 
+            triangulate=export_triangulate, 
+            set_bsp_flag=export_set_bsp_flag)
+        
+
+
+
+def create_ptc_from_gm(context, name, report):
+    print(f'exporting model {name}')
+    my_tool = context.scene.my_tool
+    export_ship_path = my_tool.export_ship_path
+
+
+    d = os.path.normpath(export_ship_path)
+    filepath = os.path.join(d, name + '.gm')
+    
+    print(f'creating ptc {filepath}')
+
+    
+
+
 
 def import_and_assemble_ship(context, report):
 
@@ -1456,7 +1811,9 @@ def import_and_assemble_ship(context, report):
                 hull_num_int = hull_num_int
             )
 
-
+        coll_target = bpy.context.scene.collection.children.get(ship_name)
+        root_target = get_root_for_collection(coll_target)
+        children = find_children_geometry(root_target, report)
         
         # bpy.ops.import.gm(filepath = f) doesn't work directly
         
@@ -1490,19 +1847,25 @@ def import_and_assemble_ship(context, report):
 
         while True:
             added = set()
-            for ob_name in ob_names_set:
+            new_children = []
+            for c in children:
+                ob_name = remove_blender_name_postfix(c.name).lower()
+                if ob_name not in ob_names_set:
+                    report({'WARNING'}, 'Error: part "{}" for ship "{}" not found'.format(ob_name, ship_name))
+                    continue
                 file = ship_path + '\\' + ship_name + '_' + ob_name + ".gm"
-                is_added = import_objects(ob_name, file, ship_name, my_tool, report)
-                if is_added:
-                    added.add(ob_name)
-            if len(added) == 0:
-                break
+                new_children.extend(import_objects(c, ob_name, file, ship_name, my_tool, report))
+                added.add(ob_name)
+            children = new_children
             ob_names_set.difference_update(added)
+            if len(new_children) == 0:
+                break
+
 
         if len(ob_names_set) > 0:
             report({'WARNING'}, 'Warning: ({}) has not been attached'.format(ob_names_set))
         else:
-            print('All parts has been inserted')
+            print('All parts has been attached')
 
         # -----------------------------------------------------------
         # Hide path geometry
@@ -1527,167 +1890,211 @@ def import_and_assemble_ship(context, report):
     if gen_vants_bool:
         print('Do vants here')
 
+        check_vants(context, report)
         # Check all objects in the scene
-        for obj in bpy.context.scene.objects:
-            v_ch = 'vant'
-            sh_n = 'shroud'
-            st_n = 'stave'
-            vp_add_arr = [1, 2, 3]
-            
-            vants_dummy_name = 'vants'
-            rig_type_shroud = 'v_rope'
-            rig_type_stave = 'stave'
+        vert_step = 0.28
+        vant_type = [('vant', 5), ('vanx', 3), ('vanz', 2)]
+        for v_ch, rope_count in vant_type:
+            for obj in bpy.context.scene.objects:
+                sh_n = 'shroud'
+                st_n = 'stave'
 
-            # Look for specific vant name in all objects in the scene
-            if fnmatch.fnmatchcase(obj.name, v_ch + '[0-9]' + 'u'):
+                vants_dummy_name = 'vants'
+                rig_type_shroud = 'v_rope'
+                rig_type_stave = 'stave'
 
-                vp_u_n = obj.name # vant point top
-                vp_r_n = vp_u_n.replace('u', 'r') # vant point bottom right
-                vp_l_n = vp_u_n.replace('u', 'l') # vant point bottom left
-                v_num = (vp_u_n.replace('u', '')).replace(v_ch, '') # vant num
-                vp_rm_n = v_ch + v_num + 'rt' # vant point top right
-                vp_lm_n = v_ch + v_num + 'lt' # vant point top left
-                
-                vr_r_n = v_ch + '_' + v_num + '_' + sh_n + '_r'
-                vr_l_n = v_ch + '_' + v_num + '_' + sh_n + '_l'
-                vr_tr_n = v_ch + '_' + v_num + '_' + sh_n + '_tr'
-                vr_tl_n = v_ch + '_' + v_num + '_' + sh_n + '_lr'
-                vstave_n = v_ch + '_' + v_num + '_' + st_n
-                vp_add_n = v_ch + '_' + v_num + '_' + st_n + '_'
+                # Look for specific vant name in all objects in the scene
+                if fnmatch.fnmatchcase(obj.name.lower(), v_ch + '[0-9]' + 'u'):
 
-                v1 = bpy.data.objects[vp_u_n].matrix_world.translation
-                v2 = bpy.data.objects[vp_r_n].matrix_world.translation
-                v3 = bpy.data.objects[vp_l_n].matrix_world.translation
+                    vp_u_n = obj.name # vant point top
+                    vp_r_n = vp_u_n.replace('u', 'r') # vant point bottom right
+                    vp_l_n = vp_u_n.replace('u', 'l') # vant point bottom left
+                    v_num = (vp_u_n.replace('u', '')).replace(v_ch, '') # vant num
+                    vp_rm_n = v_ch + v_num + 'rt' # vant point top right
+                    vp_lm_n = v_ch + v_num + 'lt' # vant point top left
+                    
+                    vr_r_n = v_ch + '_' + v_num + '_' + sh_n + '_r'
+                    vr_l_n = v_ch + '_' + v_num + '_' + sh_n + '_l'
+                    vr_tr_n = v_ch + '_' + v_num + '_' + sh_n + '_tr'
+                    vr_tl_n = v_ch + '_' + v_num + '_' + sh_n + '_lr'
+                    vstave_n = v_ch + '_' + v_num + '_' + st_n
+                    vp_add_n = v_ch + '_' + v_num + '_' + st_n + '_'
 
-                # Specify vant helper (vp_rm_n and vp_lm_n) shift and height
-                v_height = 0.8
-                v_shift = 0.4
+                    v_finish = bpy.data.objects[vp_u_n].matrix_world.translation
 
-                #print('Vant number', v_num + ':', vp_u_n, vp_r_n, vp_l_n, vp_rm_n, vp_lm_n)
-                print('')
+                    v_right_bottom = bpy.data.objects[vp_r_n].matrix_world.translation
+                    v_left_bottom = bpy.data.objects[vp_l_n].matrix_world.translation
 
 
-                # -----------------------------------------------------------
-                # Create vant helpers
-                # -----------------------------------------------------------
+                    # Specify vant helper (vp_rm_n and vp_lm_n) shift and height
+                    v_height = 0.9
+                    v_shift = 0.4
 
-                # Create dummy helper for right bottom vant point (vp_rm_n)
-                v4_loc = v2 - (v2-v1)*v_height + Vector((-v_shift*(-1 if v2.y < 0 else 1),0,0))
-                create_dummy(ship_name, vp_rm_n, vants_dummy_name, v4_loc, report)
-                
-                # Create dummy helper for left bottom vant point (vp_lm_n)
-                v5_loc = v3 - (v3-v1)*v_height + Vector((v_shift*(-1 if v3.y < 0 else 1),0,0))
-                create_dummy(ship_name, vp_lm_n, vants_dummy_name, v5_loc, report)
-
-                v4 = bpy.data.objects[vp_rm_n].matrix_world.translation
-                v5 = bpy.data.objects[vp_lm_n].matrix_world.translation
+                    #print('Vant number', v_num + ':', vp_u_n, vp_r_n, vp_l_n, vp_rm_n, vp_lm_n)
+                    print('')
 
 
-                for i in range(len(vp_add_arr)):
-                    vp_add_loc = v4 + ((v5-v4)/3) * (vp_add_arr[i])
-                    create_dummy(ship_name, vp_add_n + str(vp_add_arr[i]), vants_dummy_name, vp_add_loc, report)
+                    # -----------------------------------------------------------
+                    # Create vant helpers
+                    # -----------------------------------------------------------
 
 
+                    is_left_side = v_left_bottom.x > v_right_bottom.x
+                    
+
+                    # Create dummy helper for right bottom vant point (vp_rm_n)
+                    v_first_loc = v_right_bottom - (v_right_bottom-v_finish)*v_height + Vector((-v_shift*(1 if is_left_side else -1),0,0))
+                    create_dummy(ship_name, vp_rm_n, vants_dummy_name, v_first_loc, report)
+                    
+                    # Create dummy helper for left bottom vant point (vp_lm_n)
+                    v_last_loc = v_left_bottom - (v_left_bottom-v_finish)*v_height + Vector((v_shift*(1 if is_left_side else -1),0,0))
+                    create_dummy(ship_name, vp_lm_n, vants_dummy_name, v_last_loc, report)
+
+                    v_right_top = bpy.data.objects[vp_rm_n].matrix_world.translation
+                    v_left_top = bpy.data.objects[vp_lm_n].matrix_world.translation
 
 
-                """
-                # Create dummy helper test
-                vp_add_loc = v4 + ((v4-v5)/3) * 1
-                create_dummy(ship_name, v_test_n, vants_dummy_name, vp_add_loc)
-                """
-
-
-                # -----------------------------------------------------------
-                # Process vant creation through functions
-                # -----------------------------------------------------------
-
-
-                """
-                creating_rope(context, vp_r_n, vp_rm_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_r_n)
-                creating_rope(context, vp_l_n, vp_lm_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_l_n)
-                creating_rope(context, vp_rm_n, vp_u_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_tr_n)
-                creating_rope(context, vp_lm_n, vp_u_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_tl_n)
-                creating_rope(context, vp_lm_n, vp_rm_n, v_num, rig_type_stave, vants_dummy_name, ship_name, vstave_n)
-                """
+                    ## Create dummy helper test
+                    #vp_add_loc = v4 + ((v4-v5)/3) * 1
+                    #v_name = f'vants_generated_{idx}'
+                    #idx += 1
+                    #create_dummy(ship_name, v_name, vants_dummy_name, vp_add_loc, report)
 
 
 
+                    # -----------------------------------------------------------
+                    # Process vant creation through functions
+                    # -----------------------------------------------------------
+
+
+
+                    creating_rope(context, vp_r_n, vp_rm_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_r_n, report)
+                    creating_rope(context, vp_l_n, vp_lm_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_l_n, report)
+                    creating_rope(context, vp_rm_n, vp_u_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_tr_n, report)
+                    creating_rope(context, vp_lm_n, vp_u_n, v_num, rig_type_shroud, vants_dummy_name, ship_name, vr_tl_n, report)
+                    creating_rope(context, vp_lm_n, vp_rm_n, v_num, rig_type_stave, vants_dummy_name, ship_name, vstave_n, report)
+
+
+                    rope_middle_count = rope_count - 2
+
+                    for i in range(rope_middle_count):
+                        vp_add_top_loc = v_left_top + ((v_right_top-v_left_top)/(rope_middle_count + 1)) * (i + 1)
+                        vp_top_name = vp_add_n + '_top_' + str(i)
+                        create_dummy(ship_name, vp_top_name, vants_dummy_name, vp_add_top_loc, report)
+
+                        vp_add_bottom_loc = v_left_bottom + ((v_right_bottom-v_left_bottom)/(rope_middle_count + 1)) * (i + 1)
+                        vp_bottom_name = vp_add_n + '_bottom_' + str(i)
+                        create_dummy(ship_name, vp_bottom_name, vants_dummy_name, vp_add_bottom_loc, report)
+                        cur_name = v_ch + '_' + v_num + '_' + sh_n + '_bottom_mid_' + str(i)
+                        creating_rope(context, vp_bottom_name, vp_top_name, v_num + '_bottom_mid_' + str(i), rig_type_shroud, vants_dummy_name, ship_name, cur_name, report)
+
+                        cur_name = v_ch + '_' + v_num + '_' + sh_n + '_top_mid_' + str(i)
+                        creating_rope(context, vp_top_name, vp_u_n, v_num + '_top_mid_' + str(i), rig_type_shroud, vants_dummy_name, ship_name, cur_name, report)
+
+                    
 
 
 
 
-
-                """
-                # -----------------------------------------------------------
-                # Create vant top object
-                # -----------------------------------------------------------
-                final_top_vant_name = v_ch + '_' + v_num + '_top'
-                final_bot_vant_name = v_ch + '_' + v_num + '_bottom'
-                print('Final vant top name:', final_top_vant_name)
-                print('Final vant bottom name:', final_bot_vant_name)
-            
-                vertices = [v1, v4, v5]
-                edges = []
-                faces = [(0, 1, 2)]
-
-                new_mesh = bpy.data.meshes.new(v_ch + '_top_' + v_num + '_mesh')
-                new_mesh.from_pydata(vertices, edges, faces)
-                new_mesh.update()
-
-                # make object from mesh
-                new_object = bpy.data.objects.new(final_top_vant_name, new_mesh)
-
-                # Add sail object to existing collection
-                sail_collection = bpy.data.collections[ship_name]
-                sail_collection.objects.link(new_object)
-
-                # Select sail object
-                vant_ob = bpy.context.scene.objects[final_top_vant_name] # Get the object
-                bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
-                bpy.context.view_layer.objects.active = vant_ob # Make the cube the active object 
-                vant_ob.select_set(True)
-
-                # Make shading smooth
-                bpy.ops.object.shade_smooth()
-                
-                # Creating UV
-                bpy.ops.mesh.uv_texture_add()
-                vant_ob = bpy.data.objects[final_top_vant_name]
-                uvMap = vant_ob.data.uv_layers['UVMap']
+                    bottom_steps = int((v_left_top.z - v_left_bottom.z) / vert_step) - 1
+                    top_steps = int((v_finish.z - v_left_top.z) / vert_step) - 1
 
 
-                # -----------------------------------------------------------
-                # Create vant bottom object
-                # -----------------------------------------------------------
-                vertices = [v3, v2, v4, v5]
-                edges = []
-                faces = [(0, 1, 2, 3)]
+                    for i in range(bottom_steps):
+                        vp_add_left_loc = v_left_bottom + ((v_left_top-v_left_bottom)/(bottom_steps + 1)) * (i + 1)
+                        vp_left_name = vp_add_n + '_bottom_horisontal_left_' + str(i)
+                        create_dummy(ship_name, vp_left_name, vants_dummy_name, vp_add_left_loc, report)
 
-                new_mesh = bpy.data.meshes.new(v_ch + '_bottom_' + v_num + '_mesh')
-                new_mesh.from_pydata(vertices, edges, faces)
-                new_mesh.update()
+                        vp_add_right_loc = v_right_bottom + ((v_right_top-v_right_bottom)/(bottom_steps + 1)) * (i + 1)
+                        vp_right_name = vp_add_n + '_bottom_horisontal_right_' + str(i)
+                        create_dummy(ship_name, vp_right_name, vants_dummy_name, vp_add_right_loc, report)
 
-                # make object from mesh
-                new_object = bpy.data.objects.new(final_bot_vant_name, new_mesh)
+                        cur_name = v_ch + '_' + v_num + '_' + sh_n + '_bottom_horisontal_' + str(i)
+                        creating_rope(context, vp_left_name, vp_right_name, v_num + '_bottom_horisontal_' + str(i), rig_type_shroud, vants_dummy_name, ship_name, cur_name, report)
 
-                # Add sail object to existing collection
-                sail_collection = bpy.data.collections[ship_name]
-                sail_collection.objects.link(new_object)
+                    for i in range(top_steps):
+                        vp_add_left_loc = v_left_top + ((v_finish-v_left_top)/(top_steps + 1)) * (i + 1)
+                        vp_left_name = vp_add_n + '_top_horisontal_left_' + str(i)
+                        create_dummy(ship_name, vp_left_name, vants_dummy_name, vp_add_left_loc, report)
 
-                # Select sail object
-                vant_ob = bpy.context.scene.objects[final_bot_vant_name] # Get the object
-                bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
-                bpy.context.view_layer.objects.active = vant_ob # Make the cube the active object 
-                vant_ob.select_set(True)
+                        vp_add_right_loc = v_right_top + ((v_finish-v_right_top)/(top_steps + 1)) * (i + 1)
+                        vp_right_name = vp_add_n + '_top_horisontal_right_' + str(i)
+                        create_dummy(ship_name, vp_right_name, vants_dummy_name, vp_add_right_loc, report)
 
-                # Make shading smooth
-                bpy.ops.object.shade_smooth()
-                
-                # Creating UV
-                bpy.ops.mesh.uv_texture_add()
-                vant_ob = bpy.data.objects[final_bot_vant_name]
-                uvMap = vant_ob.data.uv_layers['UVMap']
-                """
+                        cur_name = v_ch + '_' + v_num + '_' + sh_n + '_top_horisontal_' + str(i)
+                        creating_rope(context, vp_left_name, vp_right_name, v_num + '_top_horisontal_' + str(i), rig_type_shroud, vants_dummy_name, ship_name, cur_name, report)
+
+
+                #    # -----------------------------------------------------------
+                #    # Create vant top object
+                #    # -----------------------------------------------------------
+                #    final_top_vant_name = v_ch + '_' + v_num + '_top'
+                #    final_bot_vant_name = v_ch + '_' + v_num + '_bottom'
+                #    print('Final vant top name:', final_top_vant_name)
+                #    print('Final vant bottom name:', final_bot_vant_name)
+                #
+                #    vertices = [v1, v4, v5]
+                #    edges = []
+                #    faces = [(0, 1, 2)]
+#
+                #    new_mesh = bpy.data.meshes.new(v_ch + '_top_' + v_num + '_mesh')
+                #    new_mesh.from_pydata(vertices, edges, faces)
+                #    new_mesh.update()
+#
+                #    # make object from mesh
+                #    new_object = bpy.data.objects.new(final_top_vant_name, new_mesh)
+#
+                #    # Add sail object to existing collection
+                #    sail_collection = bpy.data.collections[ship_name]
+                #    sail_collection.objects.link(new_object)
+#
+                #    # Select sail object
+                #    vant_ob = bpy.context.scene.objects[final_top_vant_name] # Get the object
+                #    bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
+                #    bpy.context.view_layer.objects.active = vant_ob # Make the cube the active object 
+                #    vant_ob.select_set(True)
+#
+                #    # Make shading smooth
+                #    bpy.ops.object.shade_smooth()
+                #    
+                #    # Creating UV
+                #    bpy.ops.mesh.uv_texture_add()
+                #    vant_ob = bpy.data.objects[final_top_vant_name]
+                #    uvMap = vant_ob.data.uv_layers.active
+#
+#
+                #    # -----------------------------------------------------------
+                #    # Create vant bottom object
+                #    # -----------------------------------------------------------
+                #    vertices = [v3, v2, v4, v5]
+                #    edges = []
+                #    faces = [(0, 1, 2, 3)]
+#
+                #    new_mesh = bpy.data.meshes.new(v_ch + '_bottom_' + v_num + '_mesh')
+                #    new_mesh.from_pydata(vertices, edges, faces)
+                #    new_mesh.update()
+#
+                #    # make object from mesh
+                #    new_object = bpy.data.objects.new(final_bot_vant_name, new_mesh)
+#
+                #    # Add sail object to existing collection
+                #    sail_collection = bpy.data.collections[ship_name]
+                #    sail_collection.objects.link(new_object)
+#
+                #    # Select sail object
+                #    vant_ob = bpy.context.scene.objects[final_bot_vant_name] # Get the object
+                #    bpy.ops.object.select_all(action='DESELECT') # Deselect all objects
+                #    bpy.context.view_layer.objects.active = vant_ob # Make the cube the active object 
+                #    vant_ob.select_set(True)
+#
+                #    # Make shading smooth
+                #    bpy.ops.object.shade_smooth()
+                #    
+                #    # Creating UV
+                #    bpy.ops.mesh.uv_texture_add()
+                #    vant_ob = bpy.data.objects[final_bot_vant_name]
+                #    uvMap = vant_ob.data.uv_layers.active
+
 
         #define_vant_points(ship_name, my_tool)
 
@@ -1878,15 +2285,16 @@ def import_and_assemble_ship(context, report):
         # -----------------------------------------------------------
         # Apply all modifiers and remove wind after 1 sec (30 frames)
         # -----------------------------------------------------------
+        sail_list = []
         for obj in bpy.context.scene.objects:
 
             # look for rectangular sail of type D
             if fnmatch.fnmatchcase(obj.name, "sail_d*") or fnmatch.fnmatchcase(obj.name, "sail_s*") or fnmatch.fnmatchcase(obj.name, "sail_g*") or fnmatch.fnmatchcase(obj.name, "sail_f*") or fnmatch.fnmatchcase(obj.name, "sail_t*") or fnmatch.fnmatchcase(obj.name, "sail_v*") or fnmatch.fnmatchcase(obj.name, "sail_n*") or fnmatch.fnmatchcase(obj.name, "flg_fp*") or fnmatch.fnmatchcase(obj.name, "flg_fl*") or fnmatch.fnmatchcase(obj.name, "flg_fs*"):
-
-                # Wait 1 sec (30 frames) then apply modifiers
-                bpy.app.timers.register(functools.partial(apply_m, obj.name), first_interval=3)
-
-        bpy.app.timers.register(functools.partial(remove_wind), first_interval=5)
+                sail_list.append(obj)
+        # Wait 3 sec then apply modifiers
+        for obj in sail_list:
+            bpy.app.timers.register(functools.partial(apply_m, obj.name), first_interval=3)
+        bpy.app.timers.register(functools.partial(remove_wind), first_interval=3)
         
 
     else:
@@ -1898,6 +2306,35 @@ def import_and_assemble_ship(context, report):
 
 
 
+def check_vants(context, report):
+    vant_type = [('vant', 5), ('vanx', 3), ('vanz', 2)]
+    v_part_dict = {'u': 0, 'l': 1, 'r': 2}
+    #
+    for v_ch, rope_count in vant_type:
+        vant_re = '^{}(\d+)([ulr])'.format(v_ch)
+        vants = {}
+        
+        for obj in bpy.context.scene.objects:
+            found = re.findall(vant_re, obj.name.lower())
+            if len(found) == 0:
+                continue
+            num = found[0][0]
+            if num not in vants:
+                vants[num] = [None, None, None]
+            vants[num][v_part_dict[found[0][1]]] = obj
+
+
+        for n, cur in vants.items():
+            if cur[0] is not None and cur[1] is not None and cur[2] is not None :
+                continue
+            report({'WARNING'}, 'Vant {}{} is not full: top: {}, left: {}, right: {}'.format(v_ch, n, 
+                                                                                             cur[0].name if cur[0] is not None else "not found",
+                                                                                             cur[1].name if cur[1] is not None else "not found",
+                                                                                             cur[2].name if cur[2] is not None else "not found"
+                                                                                             ))
+
+         
+
 # ------------------------------------------------------------------------
 #     Registration
 # ------------------------------------------------------------------------
@@ -1905,7 +2342,10 @@ def import_and_assemble_ship(context, report):
 classes = (
     MyProperties,
     ImpSEShip_Button,
+    ImpSEShip_ExportButton,
     SETUP_PT_ImpSEShip,
+    ImpSEShip_MarkSkipBSP,
+    ImpSEShip_UnmarkSkipBSP
 )
 
 def register():
@@ -1926,7 +2366,7 @@ if __name__ == "__main__":
     register()
     
 # Test call
-#bpy.ops.impseship.main()
+#bpy.ops.impseship.build_ship()
 
 print("===================================================================")
 print("")

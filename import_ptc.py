@@ -142,6 +142,7 @@ def import_ptc(context, file_path=""):
 
     root = bpy.data.objects.new("root", None)
     collection.objects.link(root)
+    root['ExportType'] = 'PTC'
 
     objects_triangles = []
     current_object_triangles = []

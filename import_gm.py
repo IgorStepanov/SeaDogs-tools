@@ -1080,6 +1080,7 @@ def import_gm(
 
     root = bpy.data.objects.new("root", None)
     collection.objects.link(root)
+    root['ExportType'] = 'Model'
 
     if has_animation:
         armature_obj = get_armature_obj(
