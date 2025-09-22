@@ -12,10 +12,10 @@ from bpy.types import Operator
 from bpy_extras.io_utils import ExportHelper, axis_conversion
 
 bl_info = {
-    "name": "SeaDogs AN",
+    "name": "SeaDogs AN export",
     "description": "Export AN files",
     "author": "Artess999",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",

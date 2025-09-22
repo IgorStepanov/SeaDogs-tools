@@ -17,10 +17,10 @@ sys.setrecursionlimit(10000)
 
     
 bl_info = {
-    "name": "SeaDogs SailorPoints",
+    "name": "SeaDogs SailorPoints export",
     "description": "Export SailorPoints files",
     "author": "Wazar",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",

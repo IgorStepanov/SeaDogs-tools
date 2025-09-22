@@ -15,9 +15,9 @@ from bpy.types import PropertyGroup, Panel, Scene, Operator
 from bpy.utils import register_class, unregister_class
 
 bl_info = {
-    "name" : "SeaDogs GM Ship Assemble",
-    "author" : "Tosyk",
-    "version" : (1, 1),
+    "name" : "SeaDogs GM Ship Assemble, Export and other",
+    "author" : "Tosyk, Wazar",
+    "version" : (2, 0, 0),
     "blender" : (4, 4, 1),
     "location" : "View3d > Tool",
     "warning" : "",

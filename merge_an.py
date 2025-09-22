@@ -14,8 +14,8 @@ from bpy_extras.io_utils import ImportHelper, axis_conversion
 bl_info = {
     "name": "SeaDogs Merge AN",
     "description": "Merge AN files",
-    "author": "Artess999/Wazar",
-    "version": (1, 0, 0),
+    "author": "Artess999, Wazar",
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",

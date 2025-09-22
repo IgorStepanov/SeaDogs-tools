@@ -17,10 +17,10 @@ sys.setrecursionlimit(10000)
 
     
 bl_info = {
-    "name": "SeaDogs Foam",
+    "name": "SeaDogs island foam export",
     "description": "Export Foam files",
     "author": "Wazar",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",
@@ -176,7 +176,7 @@ def export_foam(context, file_path="", report_func=None):
 class ExportFoam(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
     bl_idname = "export.foam"
-    bl_label = "Export foam"
+    bl_label = "Island foam export"
 
     # ExportHelper mixin class uses this
     filename_ext = ".ini"
@@ -201,7 +201,7 @@ class ExportFoam(Operator, ExportHelper):
 
 def menu_func_export(self, context):
     self.layout.operator(ExportFoam.bl_idname,
-                         text="Foam Export(.ini)")
+                         text="Island foam export (.ini)")
 
 
 def register():

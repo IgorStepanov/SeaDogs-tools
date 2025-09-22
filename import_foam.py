@@ -11,10 +11,10 @@ from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper, axis_conversion
 
 bl_info = {
-    "name": "SeaDogs Foam",
+    "name": "SeaDogs island foam import",
     "description": "Import Foam files",
     "author": "Wazar",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",
@@ -153,7 +153,7 @@ def import_foam(
 class ImportFoam(Operator, ImportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
     bl_idname = "import.foam"
-    bl_label = "Import foam"
+    bl_label = "Island foam import"
 
     # ImportHelper mixin class uses this
     filename_ext = ".ini"
@@ -172,7 +172,7 @@ class ImportFoam(Operator, ImportHelper):
 
 def menu_func_import_foam(self, context):
     self.layout.operator(ImportFoam.bl_idname,
-                         text="Foam Import(.ini)")
+                         text="Island foam import (.ini)")
 
 
 def register():

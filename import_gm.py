@@ -13,10 +13,10 @@ from bpy_extras.io_utils import ImportHelper, axis_conversion
 from pathlib import Path
 
 bl_info = {
-    "name": "SeaDogs GM",
+    "name": "SeaDogs GM import",
     "description": "Import GM files",
-    "author": "Artess999",
-    "version": (1, 0, 0),
+    "author": "Artess999, Wazar",
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",

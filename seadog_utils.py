@@ -1,6 +1,6 @@
 bl_info = {
     "name": "SeaDogs Utils",
-    "version": (0, 0, 5),
+    "version": (1, 0, 0),
     "blender": (4, 4, 1),
     "category": "Object",
     "support": "COMMUNITY",
@@ -394,9 +394,6 @@ def print_foam_links(foam, report):
 
 
 
-gen_foam_classes = {}
-
-      
 def GenerateFoam(shift):   
     class GenerateFoamImpl(bpy.types.Operator):
         bl_idname = "seadogs_util.generate_foam_"+shift
@@ -596,7 +593,7 @@ def FixLocators(skeleton):
     return FixLocatorsImpl
 
 class SeadogsProperties(bpy.types.PropertyGroup):
-
+    #todo options
     pass
 
 

@@ -15,10 +15,10 @@ from bpy_extras.io_utils import ExportHelper, axis_conversion
 sys.setrecursionlimit(10000)
 
 bl_info = {
-    "name": "SeaDogs GM",
+    "name": "SeaDogs GM export",
     "description": "Export GM files",
-    "author": "Artess999",
-    "version": (1, 0, 0),
+    "author": "Artess999, Wazar",
+    "version": (1, 2, 0),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",
