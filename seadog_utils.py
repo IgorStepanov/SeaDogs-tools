@@ -9,12 +9,11 @@ bl_info = {
 
 import bmesh
 import bpy
+from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty
 import numpy
 from mathutils import Vector, Matrix
 import re
 from math import *
-
-vertex_smooth_mark_name = 'vertex_smooth_mark'
 
 foam_depth = 45.0
 
@@ -71,10 +70,9 @@ def add_key_to_foam(foam, vert, shift):
     
     cur_index = len(foam.children) // 2
     
-    base = vert[0]
-    norm = vert[1]
-    base.z = 0
-    norm.z = 0
+    base = vert.coord.to_2d()
+    norm = vert.get_direction()
+
     
     shift_1 = 0
     shift_2 = foam_depth
@@ -86,7 +84,7 @@ def add_key_to_foam(foam, vert, shift):
         shift_1 += foam_depth / 3
         shift_2 += foam_depth / 3
     
-    
+
     shift_1_vec = norm.normalized() * shift_1
     shift_2_vec = norm.normalized() * shift_2
     
@@ -102,152 +100,267 @@ def add_key_to_foam(foam, vert, shift):
     locator_1.parent = foam
     locator_1.empty_display_type = 'ARROWS'
     locator_1.empty_display_size = 1.0
-    locator_1.matrix_basis = Matrix.Translation(coord_1)
+    locator_1.matrix_basis = Matrix.Translation(coord_1.to_3d())
     
     locator_2 = bpy.data.objects.new(locator_2_name, None)
     collection.objects.link(locator_2)
     locator_2.parent = foam
     locator_2.empty_display_type = 'ARROWS'
     locator_2.empty_display_size = 1.0
-    locator_2.matrix_basis = Matrix.Translation(coord_2)
+    locator_2.matrix_basis = Matrix.Translation(coord_2.to_3d())
     
 
 
-def get_vert_list(mesh, report):
-    depsgraph = bpy.context.evaluated_depsgraph_get()
 
 
-    #ob = bpy.context.object
-    #assert ob.type == "MESH"
-    #me = ob.data
-    #bm2 = bmesh.new()
+
+def vert_to_string(v):
+    return '{:.10f}:{:.10f}:{:.10f}'.format(v.co.x, v.co.y, v.co.z)
+
+class Point:
+    def __init__(self, number, coord, normal, _points):
+        self.number = number
+        self.coord = coord
+        self.normal = normal
+        self.edges = []
+        self.passed = 0
+        self._points = _points
+
+    def set_pairs(self, pairs):
+        cur_pairs = set(self.edges)
+        new_pairs = set(pairs)
+
+        self.edges = list(cur_pairs.union(new_pairs))
+
+        for cur in pairs:
+            if cur == self.number:
+                bpy.context.scene.cursor.location = self.coord
+                raise ValueError('{} is setted as pair to itself'.format(cur))
+            
+    def add_pair(self, pair):
+        cur_pairs = set(self.edges)
+        cur_pairs.add(pair)
+        self.edges = list(cur_pairs)
+
+
+    def get_direction(self):
+
+        edge_1 = self._points[self.edges[0]].coord.to_2d() - self.coord.to_2d()
+        edge_2 = None
+        if (len(self.edges) > 1):
+            edge_2= self._points[self.edges[1]].coord.to_2d() - self.coord.to_2d()
+        else:
+            edge_2 = -edge_1
+        
+
+        norm = edge_1.normalized() + edge_2.normalized()
+        if norm.length == 0.0:
+           norm = edge_1.orthogonal()
+
+        if norm.dot(self.normal.to_2d()) < 0:
+            norm = -norm
+        return norm
+    
+    def print(self):
+        print('{}: ({}) => {}'.format(self.number, self.coord, self.edges))
+
+
+
+class SubGraph:
+    def __init__(self, points, is_cycle):
+        self.points = points
+        self.is_cycle = is_cycle
+
+
+    def print(self):
+        print('{}; is_cycle: {}'.format([p.number for p in self.points], self.is_cycle))
+
+
+def get_sub_graphs(context, mesh, report):
+    points = {}
+    point_nums = []
+    coord_idx = {}
+    alias_idx = {}
+    sub_graphs = []
+
+
     bm = bmesh.from_edit_mesh(mesh.data)
     bm.verts.ensure_lookup_table()
     print(len(bm.verts[:]))
     print(len(bm.edges[:]))
-    
-    v0 = bm.select_history.active
-    iv0 = None
-    
-    if v0 is None:
-        report({'ERROR'}, 'Start vertex should be selected')
-        bm.free()
-        return None
-    fx = bmesh.ops.contextual_create(
-            bm,
-            geom=bm.verts[:] + bm.edges[:],
-            )
-    f = fx["faces"][0]
-    
-    fverts = f.verts[:]
-    
-    if f.normal.dot((0, 0, 1)) < 0:
-        fverts.reverse()
-    #bm.faces.remove(f)
-    print(v0)
-    for i, v in enumerate(fverts):
-        #print(v)
+
+    for i, v in enumerate(bm.verts):
         v.index = i
-        if v.co == v0.co:
-            iv0 = i
 
-    if iv0 is None:
-        report({'ERROR'}, 'Start vertex should be re-selected')
-        
-        bm.faces.remove(f)
-        bm.free()
-        bpy.context.view_layer.objects.active = mesh
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
-        return None
-
-    verts = [None] * len(fverts)
-    for v in fverts:
-        v.index = (v.index - iv0) % len(fverts) 
-        verts[v.index] = v
-       
-    #verts = bm.verts[:]
-    #verts.sort()
-
-    coords = [[v.co, v.normal] for v in verts if v.select]
-    coords.append(coords.pop(0))
-
-    #bm.verts.remove(f)
-    edges = f.edges[:]
-    print("edges = ", f.edges[:])
-    bm.edges.ensure_lookup_table()
-    
-    #bm.edges.remove(f.edges[:])
-    bm.faces.remove(f)
-    bm.edges.ensure_lookup_table()
-    bm.verts.ensure_lookup_table()
-    bm.free()
-    
-    #bpy.ops.object.mode_set( mode = 'OBJECT' ) 
-    
-    
-    selected = [v for v in mesh.data.vertices if v.select]
-    
-    
-    bpy.context.view_layer.objects.active = mesh
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
-
-    bpy.ops.mesh.select_all(action = 'DESELECT')
-    #bpy.ops.object.mode_set(mode = 'OBJECT')
-    #for v in selected:
-    #    v.select = True
-    #bpy.ops.object.mode_set(mode = 'EDIT') 
-
-    #bmesh.update_edit_mesh(mesh.data) 
-    print("fx: ", fx)
-    return coords
-
-
-
-def generate_foam(mesh, root, shift, report):
-    
-    
-
-    #mesh_data = mesh.data
-    #selected_verts = list(filter(lambda v: v.select, mesh_data.vertices))
-
-
-    vert_list = get_vert_list(mesh, report)
-
-    
-
-    print(vert_list)
-    
-    
-    prev = None
-    foam_object = get_foam_object(root)
-    cur_foam = create_new_foam(foam_object)
-    count = 0
-    for i, v in enumerate(vert_list): 
-        if prev is not None and prev[0] == v[0]:
+    for i, v in enumerate(bm.verts):
+        if not v.select:
             continue
-        add_key_to_foam(cur_foam, v, shift)
-        if count > max_foams and i < len(vert_list) - 2:
-            count = 0
-            cur_foam = create_new_foam(foam_object)
+        cur_idx = v.index
+
+        if cur_idx in alias_idx:
+           cur_idx = alias_idx[cur_idx]
+        else:
+            vstr = vert_to_string(v)
+            if vstr in coord_idx:
+                cur_idx = coord_idx[vstr]
+                alias_idx[v.index] = cur_idx
+            else:
+                coord_idx[vstr] = cur_idx
+                alias_idx[cur_idx] = cur_idx
+                point_nums.append(cur_idx)
+                cur_point = Point(cur_idx, v.co.copy(), v.normal.copy(), points)
+                points[cur_idx] = cur_point
+
+    point_nums.sort()
+
+    for i, v in enumerate(bm.verts):
+        if not v.select:
+            continue
+        cur_idx = alias_idx[v.index]
+
+        cur_point = points[cur_idx]
+            
+            
+
+        pairs = [e.other_vert(v) for e in v.link_edges if e.other_vert(v).select]
+        pair_idxs = [alias_idx[p.index] for p in pairs if alias_idx[p.index] != cur_idx]
+        cur_point.set_pairs(pair_idxs)
+        if (len(cur_point.edges) > 2):
+            report({'ERROR'}, '{}: vertex with more than two selected edges is selected'.format(cur_idx))
+            context.scene.cursor.location = v.co
+            return sub_graphs
+        
+
+        if (len(cur_point.edges) == 0):
+            report({'ERROR'}, '{}: vertex without selected edges is selected'.format(cur_idx))
+            context.scene.cursor.location = v.co
+            return sub_graphs
+    
+        
+        for p in pair_idxs:
+            pair_point = points[p]
+            pair_point.add_pair(cur_idx)
+            if (len(pair_point.edges) > 2):
+                report({'ERROR'}, '{}: vertex with more than two selected edges is selected'.format(p))
+                context.scene.cursor.location = pair_point.coord
+                return sub_graphs
+
+
+    #print('=======P======')
+    #for idx in point_nums:
+    #    cur_point = points[idx]
+    #    cur_point.print()
+    #print('==================')
+
+
+    for idx in point_nums:
+        cur_point = points[idx]
+        print('cur_point = {}; passed = {}'.format(idx, cur_point.passed))
+        if cur_point.passed != 0:
+            continue
+
+        start_point = cur_point
+        cur_point.passed = 1
+        prev_point = cur_point
+
+        is_cycle = False
+        cur_indexes = [cur_point.number]
+        print('start {}'.format(cur_point.number))
+        while True:
+            next_idx = cur_point.edges[0]
+            if next_idx == prev_point.number:
+                if len(cur_point.edges) > 1:
+                    next_idx = cur_point.edges[1]
+                else:
+                    print('cur_point.number = {}; prev_point.number = {} no next'.format(cur_point.number, prev_point.number))
+                    break
+            next_point = points[next_idx]
+            print('next_point.number = {}; cur_point.number = {} ->'.format(next_point.number, cur_point.number))    
+            cur_indexes.append(next_idx)
+            if (next_point.passed == 1):
+                is_cycle = True
+                print('cur_point.number = {}; prev_point.number = {} cycle'.format(next_point.number, cur_point.number))
+                break
+            prev_point = cur_point
+            cur_point = next_point
+            cur_point.passed = 1
+
+        if not is_cycle:
+            prev_points = []
+
+            if len(start_point.edges) > 1:
+                prev_point = start_point
+                next_idx = start_point.edges[1]
+                cur_point = points[next_idx]
+
+                while True:
+                    next_idx = cur_point.edges[0]
+                    print('next_idx = {}; prev_point.number = {}'.format(next_idx, prev_point.number))
+                    if next_idx == prev_point.number:
+                        if len(cur_point.edges) > 1:
+                            next_idx = cur_point.edges[1]
+                        else:
+                            break
+                    prev_point = cur_point
+                    cur_point = points[next_idx]
+
+                prev_points = [cur_point.number]
+                prev_point = cur_point
+                cur_point.passed = 1
+
+                while True:
+                    next_idx = cur_point.edges[0]
+                    if next_idx == prev_point.number:
+                        next_idx = cur_point.edges[1]
+                    next_point = points[next_idx]
+                    if (next_point.passed == 1):
+                        break
+                    prev_points.append(next_idx)
+                    prev_point = cur_point
+                    cur_point = next_point
+                    cur_point.passed = 1
+
+                prev_points.extend(cur_indexes)
+                cur_indexes = prev_points
+        
+
+        point_for_graph = [points[i] for i in cur_indexes]
+        cur_graph = SubGraph(point_for_graph, is_cycle)
+
+
+        sub_graphs.append(cur_graph)
+
+
+    #print('=====SG======')
+    #for sg in sub_graphs:
+    #    sg.print()
+    #print('==================')
+    return sub_graphs
+
+def generate_foam(context, mesh, root, shift, report):
+    sub_graphs = get_sub_graphs(context, mesh, report)
+    foam_object = get_foam_object(root)
+
+    for sg in sub_graphs:
+        cur_foam = create_new_foam(foam_object)
+        count = 0
+        for i, v in enumerate(sg.points): 
+
             add_key_to_foam(cur_foam, v, shift)
-        prev = v
-        count += 1
+            if count > max_foams and i < len(sg.points) - 2:
+                count = 0
+                print_foam_links(cur_foam, report)
+                cur_foam = create_new_foam(foam_object)
+                add_key_to_foam(cur_foam, v, shift)
+            count += 1
+        print_foam_links(cur_foam, report)
          
 
 
 
 
-
-
-def sort_foam_points(root, foam, report):
-    print('sort: {}'.format(foam.name))
-    collection = root.users_collection[0]
-
-
+def print_foam_links(foam, report):
     point_locators = []
-
     points = []
     for child in foam.children:
         if child.type == 'EMPTY':
@@ -258,60 +371,13 @@ def sort_foam_points(root, foam, report):
         return {'CANCELLED'}
         
     key_count = len(point_locators) // 2
-    
-    
-    max_x = None
-    min_x = None
-    max_y = None
-    min_y = None
-    
-    
+
     
     for i in range(key_count):
         p = point_locators[i]
-        coord = p.matrix_world.translation
-        if max_x is None or max_x[1] < coord.x:
-            max_x = (p, coord.x)
-            
-        if max_y is None or max_y[1] < coord.y:
-            max_y = (p, coord.y)
-            
-        if min_x is None or min_x[1] > coord.x:
-            min_x = (p, coord.x)
-            
-        if min_y is None or min_y[1] > coord.y:
-            min_y = (p, coord.y)
 
         points.append([p, 0, point_locators[i+key_count]])
 
-
-
-    
-    mid_x = (max_x[1] + min_x[1]) * 0.5
-    mid_y = (max_y[1] + min_y[1]) * 0.5
-    
-    diff_x = max_x[1] - min_x[1]
-    diff_y = max_y[1] - min_y[1]
-    
-    mid_vec = Vector((mid_x, mid_y, 0))
-    mid_vec_2d = mid_vec.resized(2)
-
-    scale_vec = Vector((diff_x, diff_y, 1))
-
-    bpy.ops.mesh.primitive_cube_add(
-        size=1, 
-        enter_editmode=False, 
-        align='WORLD', 
-        location=mid_vec, 
-        rotation=(0, 0, 0), 
-        scale=scale_vec)
-        
-        
-    bounds_cube = bpy.context.object
-    bounds_cube.name = 'bounds_'+remove_blender_name_postfix(foam.name)
-    bounds_cube.parent = root
-    #collection.objects.link(bounds_cube)
-    
     for i in range(key_count - 1):
         point_locators[key_count + i].constraints.clear()
         constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
@@ -320,160 +386,26 @@ def sort_foam_points(root, foam, report):
         constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
         constraint.target = point_locators[i]
         constraint.name = 'link_{}_s'.format(i)
-    
-    if 'NeedSort' not in foam or not foam['NeedSort']:
-        foam['NeedSort'] = False
-        if 'BasicVector' not in foam:
-            foam['BasicVector'] = [1.0, 0.0]
-        return None
-    basic_vec = Vector((1, 0))
-    
-    if 'BasicVector' in foam:
-        basic_vec = Vector(foam['BasicVector'][0:2])
-    
-    print('sort({})'.format(foam.name))
-    
-    basic_vec = basic_vec.normalized()
-    basic_vec *= -1
-    print('\t\t basic_vec={}'.format([basic_vec.x, basic_vec.y]))
-    
-    for p in points:
-        point_2d = p[0].matrix_world.translation
-        point_2d = Vector((point_2d.x, point_2d.y))
-        vec = (point_2d -  mid_vec_2d).normalized()
-        
-        print('\t point={} vec1={}'.format(p[0].name, p[0].matrix_world.translation))
-        print('\t point={} rszd={}'.format(p[0].name, vec))
-        
-        p[1] = basic_vec.angle_signed(vec)
-        print('\t point={} angle={}'.format(p[0].name, p[1]))
-        
-        diff = (point_2d -  mid_vec_2d)
-        print('\t\t vec={}; non-norm = {}'.format([vec.x, vec.y], [diff.x, diff.y]))
-        
-    
-    
-    
-    points.sort(key=lambda p : p[1])
-    for i, p in enumerate(points): 
-        p[0].name = 'key1_{:04d}'.format(i)
-        p[2].name = 'key2_{:04d}'.format(i)
-        
-    for i in range(key_count - 1):
-        points[i][2].constraints.clear()
-        constraint = points[i][2].constraints.new(type='TRACK_TO')
-        constraint.target = points[i+1][2]
-        constraint.name = 'link_{}_f'.format(i)
-        constraint = points[i][2].constraints.new(type='TRACK_TO')
-        constraint.target = points[i][0]
-        constraint.name = 'link_{}_s'.format(i)
-    return None
-    
+
+    i = key_count - 1
+    constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
+    constraint.target = point_locators[i]
+    constraint.name = 'link_{}_s'.format(i) 
 
 
-def sort_foams(root, report):
-    collection = root.users_collection[0]
-    root_children = root.children[:]
-
-    for child in root_children:
-        if child.type == 'EMPTY' and remove_blender_name_postfix(child.name) == 'foams':
-            foams_locator = child
-            for child in foams_locator.children:
-                if child.type == 'EMPTY':
-                    ret = sort_foam_points(root, child, report)
-                    if ret != None:
-                        return ret
-                    
-        elif remove_blender_name_postfix(child.name).startswith('bounds_'):
-            bpy.data.objects.remove(child)
-            
-    return None
-            
-   
-
-class SeaDogsMenu(bpy.types.Menu):
-    bl_idname = "OBJECT_MT_seadogs_utils"
-    bl_label = "SeaDogs Utils"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("object.select_all", text="Select/Deselect All").action = 'TOGGLE'
-
-
-class MarkToSmoothNormals(bpy.types.Operator):
-    bl_context = "mesh_edit"
-    bl_idname = "object.mark_smooth_normals"
-    bl_label = "Mark normals to smooth"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        scene = context.scene
-        cursor = scene.cursor.location
-        obj = bpy.context.view_layer.objects.active
-        
-        mesh = obj.data
-        
-        attribute = mesh.attributes.get(vertex_smooth_mark_name)
-        if attribute is None:
-            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
-
-        bm = bmesh.from_edit_mesh(mesh)
-        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
-
-        for vert in bm.verts:  
-            if vert.select:
-                vert[layer] = True
-
-        bmesh.update_edit_mesh(mesh)
-        return {'FINISHED'}
-
-
-class UnMarkToSmoothNormals(bpy.types.Operator):
-    bl_context = "mesh_edit"
-    bl_idname = "object.unmark_smooth_normals"
-    bl_label = "Unmark normals to smooth"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        scene = context.scene
-        cursor = scene.cursor.location
-        obj = bpy.context.view_layer.objects.active
-        
-        mesh = obj.data
-        
-        attribute = mesh.attributes.get(vertex_smooth_mark_name)
-        if attribute is None:
-            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
-        
-        
-        
-        bm = bmesh.from_edit_mesh(mesh)
-        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
-
-        for vert in bm.verts:
-            print(f"Previous value for {vert} : {vert[layer]}")
-            
-            if vert.select:
-                print(f"SELECTED {vert}")
-                vert[layer] = False
-            
-            print(f"New value for {vert} : {vert[layer]}")
-
-        bmesh.update_edit_mesh(mesh)
-        return {'FINISHED'}
-        
-      
 
 gen_foam_classes = {}
 
       
 def GenerateFoam(shift):   
-    if shift in gen_foam_classes:
-        return gen_foam_classes[shift]
     class GenerateFoamImpl(bpy.types.Operator):
-        bl_idname = "object.generate_foam_"+shift
+        bl_idname = "seadogs_util.generate_foam_"+shift
         bl_label = "Generate foam ({})".format(shift)
         bl_options = {'REGISTER', 'UNDO'}
+
+        @classmethod
+        def poll(cls, context):
+            return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
 
         def execute(self, context):
             scene = context.scene
@@ -489,38 +421,13 @@ def GenerateFoam(shift):
                 
             root_for_foam = selected_objects[0]
 
-            ret = generate_foam(mesh_object, root_for_foam, shift, self.report)
+            ret = generate_foam(context, mesh_object, root_for_foam, shift, self.report)
             if ret is not None:
                 return {'CANCELLED'}
 
             return {'FINISHED'}
-            
-    gen_foam_classes[shift] = GenerateFoamImpl       
+   
     return GenerateFoamImpl
-
-
-class SortFoams(bpy.types.Operator):
-    bl_idname = "object.sort_foams"
-    bl_label = "Sort foams"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def execute(self, context):
-        scene = context.scene
-        cursor = scene.cursor.location
-        root_object = bpy.context.view_layer.objects.active
-
-        if (remove_blender_name_postfix(root_object.name) != 'root' or root_object.type != 'EMPTY'):
-            self.report({'ERROR'}, 'Root of foam collection should be selected')
-            return {'CANCELLED'}
-
-        ret = sort_foams(root_object, self.report)
-        if ret is not None:
-            return {'CANCELLED'}
-    
-        return {'FINISHED'}
-    
-
-fix_locator_classes = {}
 
 
 
@@ -656,13 +563,9 @@ class Character:
             bones[num] = bone
                         
 
-
-
 def FixLocators(skeleton):   
-    if skeleton in fix_locator_classes:
-        return fix_locator_classes[skeleton]
     class FixLocatorsImpl(bpy.types.Operator):
-        bl_idname = "object.fix_locators_"+skeleton
+        bl_idname = "seadogs_util.fix_locators_"+skeleton
         bl_label = "Fix locators ({})".format(skeleton)
         bl_options = {'REGISTER', 'UNDO'}
         
@@ -689,90 +592,92 @@ def FixLocators(skeleton):
                     return {'CANCELLED'}
 
 
-            return {'FINISHED'}
-    fix_locator_classes[skeleton] = FixLocatorsImpl       
+            return {'FINISHED'}   
     return FixLocatorsImpl
 
+class SeadogsProperties(bpy.types.PropertyGroup):
 
-def menu_func_sm(self, context):
-    self.layout.operator(MarkToSmoothNormals.bl_idname)
-    
-def menu_func_usm(self, context):
-    self.layout.operator(UnMarkToSmoothNormals.bl_idname)
-    
-    
-def menu_func_generate_foam(shift):
-    def _menu_func_generate_foam(self, context):
-        self.layout.operator(GenerateFoam(shift).bl_idname)
-    return _menu_func_generate_foam
-    
-def menu_func_sort_foams(self, context):
-    self.layout.operator(SortFoams.bl_idname)
-    
+    pass
 
-def menu_func_fix_locators(skeleton):
-    def _menu_func_fix_locators(self, context):
-        self.layout.operator(FixLocators(skeleton).bl_idname)
-    return _menu_func_fix_locators
 
-addon_keymaps = []
 
+
+
+class MAIN_PT_SeadogsUtils:
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Seadogs Utils"
+
+
+class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
+    bl_label = "Seadogs tools"
+    bl_idname = "SETUP_PT_SeadogsUtils"
+    bl_icon = {'TOOL_SETTINGS'}
+
+    def draw_header(self, context):
+        # Example property to display a checkbox, can be anything
+        self.layout.label(text="", icon="MOD_OCEAN")
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        seadogs_tool = scene.seadogs_tool
+
+        row = layout.row()
+        row.label(text = "Foam utils")
+
+
+        row = layout.row()
+        colL = row.column(align=False)
+        colR = row.column(align=False)
+        colL.operator("seadogs_util.generate_foam_near")
+        colR.operator("seadogs_util.generate_foam_far")
+
+        layout.row().separator()
+
+
+        row = layout.row()
+        row.label(text = "Character util")
+
+
+        row = layout.row()
+        colL = row.column(align=False)
+        colR = row.column(align=False)
+        colL.operator("seadogs_util.fix_locators_man")
+        colR.operator("seadogs_util.fix_locators_danny")
+
+
+
+
+
+
+
+
+
+
+classes = (
+    SeadogsProperties,
+    SETUP_PT_SeadogsUtils,
+    GenerateFoam('near'),
+    GenerateFoam('far'),
+    FixLocators('man'),
+    FixLocators('danny')
+)
 
 def register():
-
-
-    bpy.utils.register_class(MarkToSmoothNormals)
-    bpy.utils.register_class(UnMarkToSmoothNormals)
-    bpy.utils.register_class(GenerateFoam('near'))
-    bpy.utils.register_class(GenerateFoam('far'))
-    bpy.utils.register_class(SortFoams)
-    bpy.utils.register_class(FixLocators('man'))
-    bpy.utils.register_class(FixLocators('danny'))
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.append(menu_func_sm)
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.append(menu_func_usm)
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.append(menu_func_generate_foam('near'))
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.append(menu_func_generate_foam('far'))
-    bpy.types.VIEW3D_MT_object.append(menu_func_sort_foams)
-    bpy.types.VIEW3D_MT_object.append(menu_func_fix_locators('man'))
-    bpy.types.VIEW3D_MT_object.append(menu_func_fix_locators('danny'))
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.addon
-
-    if kc:
-        km = wm.keyconfigs.addon.keymaps.new(name='Smooth normals', space_type='EMPTY')
-        kmi = km.keymap_items.new(MarkToSmoothNormals.bl_idname, 'S', 'PRESS', ctrl=True, shift=True)
-        addon_keymaps.append((km, kmi))
-        kmi = km.keymap_items.new(UnMarkToSmoothNormals.bl_idname, 'U', 'PRESS', ctrl=True, shift=True)
-        addon_keymaps.append((km, kmi))
-        kmi = km.keymap_items.new(GenerateFoam('near').bl_idname, 'F', 'PRESS', ctrl=True, shift=True)
-        addon_keymaps.append((km, kmi))
-        kmi = km.keymap_items.new(GenerateFoam('far').bl_idname, 'N', 'PRESS', ctrl=True, shift=True)
-        addon_keymaps.append((km, kmi))
+    from bpy.utils import register_class
+    for cls in classes:
+        register_class(cls)
+        
+    bpy.types.Scene.seadogs_tool = PointerProperty(type=SeadogsProperties)
 
 def unregister():
-    # Note: when unregistering, it's usually good practice to do it in reverse order you registered.
-    # Can avoid strange issues like keymap still referring to operators already unregistered...
-    # handle the keymap
-    for km, kmi in addon_keymaps:
-        km.keymap_items.remove(kmi)
-    addon_keymaps.clear()
-    
-    bpy.types.VIEW3D_MT_object.remove(menu_func_fix_locators('danny'))
-    bpy.types.VIEW3D_MT_object.remove(menu_func_fix_locators('man'))
-    bpy.types.VIEW3D_MT_object.remove(menu_func_sort_foams)
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.remove(menu_func_generate_foam('far'))
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.remove(menu_func_generate_foam('near'))
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.remove(menu_func_usm)
-    bpy.types.VIEW3D_MT_edit_mesh_vertices.remove(menu_func_sm)
+    from bpy.utils import unregister_class
+    for cls in reversed(classes):
+        unregister_class(cls)
+        
+    del bpy.types.Scene.seadogs_tool
 
-    bpy.utils.unregister_class(FixLocators('danny'))
-    bpy.utils.unregister_class(FixLocators('man'))
-    bpy.utils.unregister_class(SortFoams)
-    bpy.utils.unregister_class(GenerateFoam('far'))
-    bpy.utils.unregister_class(GenerateFoam('near'))
-    
-    bpy.utils.unregister_class(UnMarkToSmoothNormals)
-    bpy.utils.unregister_class(MarkToSmoothNormals)
 
 
 if __name__ == "__main__":

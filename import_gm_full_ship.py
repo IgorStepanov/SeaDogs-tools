@@ -432,6 +432,11 @@ class SETUP_PT_ImpSEShip(MAIN_PT_ImpSEShip, Panel):
         row = layout.row()
         row.scale_y = 2.0
         row.operator("impseship.export_ship")
+        row = layout.row()
+        row.operator("impseship.check_ship")
+
+
+
 
         layout.row().separator()
         row = layout.row()
@@ -439,13 +444,13 @@ class SETUP_PT_ImpSEShip(MAIN_PT_ImpSEShip, Panel):
         colL = row.column(align=False)
         colR = row.column(align=False)
         colL.operator("impseship.mark_skip_bsp")
-        colL.operator("object.mark_smooth_normals")
+        colL.operator("impseship.mark_smooth_normals")
 
         colR.operator("impseship.unmark_skip_bsp")
-        colR.operator("object.unmark_smooth_normals")
+        colR.operator("impseship.unmark_smooth_normals")
 
-        
-
+        row = layout.row()
+        row.operator("impseship.select_smoothed_normals")
 
 # -----------------------------------------------------------
 # Set variables
@@ -1895,6 +1900,9 @@ def import_and_assemble_ship(context, report):
         vert_step = 0.28
         vant_type = [('vant', 5), ('vanx', 3), ('vanz', 2)]
         for v_ch, rope_count in vant_type:
+
+            vant_re = '(^{}(\d+)u)'.format(v_ch)
+            
             for obj in bpy.context.scene.objects:
                 sh_n = 'shroud'
                 st_n = 'stave'
@@ -1902,14 +1910,14 @@ def import_and_assemble_ship(context, report):
                 vants_dummy_name = 'vants'
                 rig_type_shroud = 'v_rope'
                 rig_type_stave = 'stave'
-
+                found = re.findall(vant_re, obj.name.lower())
                 # Look for specific vant name in all objects in the scene
-                if fnmatch.fnmatchcase(obj.name.lower(), v_ch + '[0-9]' + 'u'):
+                if len(found) > 0: #:fnmatch.fnmatchcase(obj.name.lower(), v_ch + '[0-9]' + 'u'):
 
-                    vp_u_n = obj.name # vant point top
+                    vp_u_n = found[0][0] #obj.name # vant point top
                     vp_r_n = vp_u_n.replace('u', 'r') # vant point bottom right
                     vp_l_n = vp_u_n.replace('u', 'l') # vant point bottom left
-                    v_num = (vp_u_n.replace('u', '')).replace(v_ch, '') # vant num
+                    v_num = found[0][1] # vant num
                     vp_rm_n = v_ch + v_num + 'rt' # vant point top right
                     vp_lm_n = v_ch + v_num + 'lt' # vant point top left
                     
@@ -2307,6 +2315,7 @@ def import_and_assemble_ship(context, report):
 
 
 def check_vants(context, report):
+    result = True
     vant_type = [('vant', 5), ('vanx', 3), ('vanz', 2)]
     v_part_dict = {'u': 0, 'l': 1, 'r': 2}
     #
@@ -2321,19 +2330,232 @@ def check_vants(context, report):
             num = found[0][0]
             if num not in vants:
                 vants[num] = [None, None, None]
-            vants[num][v_part_dict[found[0][1]]] = obj
+
+            if vants[num][v_part_dict[found[0][1]]] is not None:
+                report({'WARNING'}, 'Duplicate locator "{}"'.format(remove_blender_name_postfix(obj.name.lower())))
+                result = False
+            else:
+                vants[num][v_part_dict[found[0][1]]] = obj
 
 
         for n, cur in vants.items():
-            if cur[0] is not None and cur[1] is not None and cur[2] is not None :
+            if cur[0] is not None and cur[1] is not None and cur[2] is not None:
                 continue
             report({'WARNING'}, 'Vant {}{} is not full: top: {}, left: {}, right: {}'.format(v_ch, n, 
-                                                                                             cur[0].name if cur[0] is not None else "not found",
-                                                                                             cur[1].name if cur[1] is not None else "not found",
-                                                                                             cur[2].name if cur[2] is not None else "not found"
+                                                                                             cur[0].name if cur[0] is not None else "<not found>",
+                                                                                             cur[1].name if cur[1] is not None else "<not found>",
+                                                                                             cur[2].name if cur[2] is not None else "<not found>"
                                                                                              ))
+            result = False
+    return result
 
          
+
+def check_ropes(context, report):
+    result = True
+    rope_type = ['rope', 'fal']
+    v_part_dict = {'b': 0, 'e': 1}
+    #
+    for v_ch in rope_type:
+        regex = '^{}([be])(\d+)'.format(v_ch)
+        ropes = {}
+        
+        for obj in bpy.context.scene.objects:
+            found = re.findall(regex, obj.name.lower())
+            if len(found) == 0:
+                continue
+            num = found[0][1]
+            if num not in ropes:
+                ropes[num] = [None, None]
+
+            if ropes[num][v_part_dict[found[0][0]]] is not None:
+                report({'WARNING'}, 'Duplicate locator "{}"'.format(remove_blender_name_postfix(obj.name.lower())))
+                result = False
+            else:
+                ropes[num][v_part_dict[found[0][0]]] = obj
+
+
+        for n, cur in ropes.items():
+            if cur[0] is not None and cur[1] is not None:
+                continue
+            report({'WARNING'}, 'Rope {}{} is not full: begin: {}, end: {}'.format(v_ch, n, 
+                                                                                             cur[0].name if cur[0] is not None else "<not found>",
+                                                                                             cur[1].name if cur[1] is not None else "<not found>"
+                                                                                             ))
+            result = False
+    return result
+
+
+def check_sails(context, report):
+    result = True
+    sail_type = [('saild', 'sail', 4), 
+                 ('sailf', 'sail', 4), 
+                 ('sails', 'sail', 4), 
+                 ('sailg', 'sail', 4), 
+                 ('sailn', 'sail', 4), 
+                 ('sailt', 'sail', 3), 
+                 ('sailv', 'sail', 3), 
+
+                 ('penn', 'f', 4), 
+                 ('flag', 'f', 4), 
+                 ('sflag', 'f', 4)]
+    for v_ch, prefix, num_point in sail_type:
+        regex = '^{}(\d)*'.format(v_ch)
+        point_regex = '^{}(\d)*'.format(prefix)
+        for obj in bpy.context.scene.objects:
+            found = re.findall(regex, obj.name.lower())
+            if len(found) == 0:
+                continue
+            points = [None]*num_point
+            for point in obj.children:
+                point_found = re.findall(point_regex, point.name.lower())
+                if len(point_found) == 0:
+                    continue
+                num = int(point_found[0])
+                if num == 0:
+                    if prefix != 'sail':
+                        report({'WARNING'}, 'Invalid point "{}" for "{}"'.format(remove_blender_name_postfix(point.name, obj.name)))
+                        result = False
+                elif num <= num_point:
+                    points[num - 1] = point
+                else:
+                    report({'WARNING'}, 'Invalid point "{}" for "{}"; max number is: {}'.format(remove_blender_name_postfix(point.name, obj.name), num_point))
+                    result = False
+            ok = True
+            for p in points:
+                if p is None:
+                    ok = False
+                    break
+            if not ok:
+                report({'WARNING'}, 'Sail/flag {} is not full: {}'.format(obj.name, {'{}{}'.format(prefix, i+1): points[i].name if points[i] is not None else "<not found>" for i in range(num_point)}))
+                result = False
+    return result
+
+
+
+class ImpSEShip_CheckButton(Operator):
+    bl_label = "Check the ship"
+    bl_idname = "impseship.check_ship"
+    
+    def execute(self, context):
+        result = True
+        result = result and check_vants(context, self.report)
+        result = result and check_ropes(context, self.report)
+        result = result and check_sails(context, self.report)
+        if result:
+            self.report({'INFO'}, 'Ship is ok')
+        return {'FINISHED'}
+
+vertex_smooth_mark_name = 'vertex_smooth_mark'
+
+
+class MarkToSmoothNormals(bpy.types.Operator):
+    bl_context = "mesh_edit"
+    bl_idname = "impseship.mark_smooth_normals"
+    bl_label = "Mark normals to smooth"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    @classmethod
+    def poll(cls, context):
+        return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
+
+    def execute(self, context):
+        scene = context.scene
+        cursor = scene.cursor.location
+        obj = bpy.context.view_layer.objects.active
+        
+        mesh = obj.data
+        
+        attribute = mesh.attributes.get(vertex_smooth_mark_name)
+        if attribute is None:
+            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+
+        bm = bmesh.from_edit_mesh(mesh)
+        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+        for vert in bm.verts:  
+            if vert.select:
+                vert[layer] = True
+
+        bmesh.update_edit_mesh(mesh)
+        return {'FINISHED'}
+
+
+class UnMarkToSmoothNormals(bpy.types.Operator):
+    bl_context = "mesh_edit"
+    bl_idname = "impseship.unmark_smooth_normals"
+    bl_label = "Unmark normals to smooth"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
+
+    def execute(self, context):
+        scene = context.scene
+        cursor = scene.cursor.location
+        obj = bpy.context.view_layer.objects.active
+        
+        mesh = obj.data
+        
+        attribute = mesh.attributes.get(vertex_smooth_mark_name)
+        if attribute is None:
+            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+        
+        
+        
+        bm = bmesh.from_edit_mesh(mesh)
+        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+        for vert in bm.verts:
+            print(f"Previous value for {vert} : {vert[layer]}")
+            
+            if vert.select:
+                print(f"SELECTED {vert}")
+                vert[layer] = False
+            
+            print(f"New value for {vert} : {vert[layer]}")
+
+        bmesh.update_edit_mesh(mesh)
+        return {'FINISHED'}
+        
+class SelectSmoothedNormals(bpy.types.Operator):
+    bl_context = "mesh_edit"
+    bl_idname = "impseship.select_smoothed_normals"
+    bl_label = "Select smoothed normals "
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
+
+    def execute(self, context):
+        obj = bpy.context.view_layer.objects.active
+        
+        mesh = obj.data
+        
+        attribute = mesh.attributes.get(vertex_smooth_mark_name)
+        if attribute is None:
+            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+        
+        
+        
+        bm = bmesh.from_edit_mesh(mesh)
+        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+        for vert in bm.verts:
+
+            if vert[layer]:
+                vert.select_set(True)
+            else:
+                vert.select_set(False)
+
+        bmesh.update_edit_mesh(mesh)
+        return {'FINISHED'}      
+
+
+
 
 # ------------------------------------------------------------------------
 #     Registration
@@ -2345,7 +2567,11 @@ classes = (
     ImpSEShip_ExportButton,
     SETUP_PT_ImpSEShip,
     ImpSEShip_MarkSkipBSP,
-    ImpSEShip_UnmarkSkipBSP
+    ImpSEShip_UnmarkSkipBSP,
+    MarkToSmoothNormals,
+    UnMarkToSmoothNormals,
+    SelectSmoothedNormals,
+    ImpSEShip_CheckButton
 )
 
 def register():
