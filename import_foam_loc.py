@@ -197,6 +197,43 @@ def parse_sp(file_path="", report_func=None):
         return {'CANCELLED'};
     return sp
 
+def print_foam_links(foam, report):
+    point_locators = []
+    points = []
+    for child in foam.children:
+        if child.type == 'EMPTY':
+            point_locators.append(child)
+
+    if len(point_locators) % 2 == 1:
+        report({'ERROR'}, 'point count should be even for locator "{}"'.format(foam.name))
+        return {'CANCELLED'}
+        
+    key_count = len(point_locators) // 2
+
+    
+    for i in range(key_count):
+        p = point_locators[i]
+
+        points.append([p, 0, point_locators[i+key_count]])
+
+    for i in range(key_count - 1):
+        point_locators[key_count + i].constraints.clear()
+        constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
+        constraint.target = point_locators[key_count + i + 1]
+        constraint.name = 'link_{}_f'.format(i)
+        constraint = point_locators[i].constraints.new(type='TRACK_TO')
+        constraint.target = point_locators[i + 1]
+        constraint.name = 'link_{}_n'.format(i)
+        constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
+        constraint.target = point_locators[i]
+        constraint.name = 'link_{}_s'.format(i)
+
+    i = key_count - 1
+    constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
+    constraint.target = point_locators[i]
+    constraint.name = 'link_{}_s'.format(i) 
+
+
 def import_foam(
     context,
     file_path="",
@@ -262,6 +299,7 @@ def import_foam(
             locator_2.empty_display_type = 'ARROWS'
             locator_2.empty_display_size = 1.0
             locator_2.matrix_basis = cur_point.matrix_2
+        print_foam_links(cur_foam_locator, report_func)
 
 
     return {'FINISHED'}

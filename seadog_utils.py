@@ -1,6 +1,6 @@
 bl_info = {
     "name": "SeaDogs Utils",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 4, 1),
     "category": "Object",
     "support": "COMMUNITY",
@@ -9,13 +9,13 @@ bl_info = {
 
 import bmesh
 import bpy
-from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty
+from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty, FloatProperty
 import numpy
 from mathutils import Vector, Matrix
 import re
 from math import *
 
-foam_depth = 45.0
+foam_depth = 60.0
 
 max_foams = 35
 
@@ -65,24 +65,31 @@ def create_new_foam(foam_object):
     return cur_foam_locator
     
     
-def add_key_to_foam(foam, vert, shift):
+def add_key_to_foam(foam, vert, shift, seadogs_tool):
     collection = foam.users_collection[0]
-    
+    inverted = seadogs_tool.foam_inverted
+    cur_depth = seadogs_tool.foam_depth
     cur_index = len(foam.children) // 2
     
     base = vert.coord.to_2d()
     norm = vert.get_direction()
-
     
-    shift_1 = 0
-    shift_2 = foam_depth
+    shift_1 = cur_depth
+    shift_2 = 0
+
+    if inverted:
+        shift_1 = 0
+        shift_2 = cur_depth
     
     if shift == 'near':
-        shift_1 -= foam_depth / 3
-        shift_2 -= foam_depth / 3
+        shift_1 -= 10
+        shift_2 -= 10
     elif shift == 'far':
-        shift_1 += foam_depth / 3
-        shift_2 += foam_depth / 3
+        shift_1 += 7.8
+        shift_2 += 7.8
+    elif shift == 'farthest':
+        shift_1 += 9.6
+        shift_2 += 9.6
     
 
     shift_1_vec = norm.normalized() * shift_1
@@ -213,6 +220,12 @@ def get_sub_graphs(context, mesh, report):
 
     point_nums.sort()
 
+    print('=======P======')
+    for idx in point_nums:
+        cur_point = points[idx]
+        cur_point.print()
+    print('==================')
+
     for i, v in enumerate(bm.verts):
         if not v.select:
             continue
@@ -229,14 +242,7 @@ def get_sub_graphs(context, mesh, report):
             report({'ERROR'}, '{}: vertex with more than two selected edges is selected'.format(cur_idx))
             context.scene.cursor.location = v.co
             return sub_graphs
-        
 
-        if (len(cur_point.edges) == 0):
-            report({'ERROR'}, '{}: vertex without selected edges is selected'.format(cur_idx))
-            context.scene.cursor.location = v.co
-            return sub_graphs
-    
-        
         for p in pair_idxs:
             pair_point = points[p]
             pair_point.add_pair(cur_idx)
@@ -245,7 +251,13 @@ def get_sub_graphs(context, mesh, report):
                 context.scene.cursor.location = pair_point.coord
                 return sub_graphs
 
-
+    for idx in point_nums:
+        cur_point = points[idx]
+        if (len(cur_point.edges) == 0):
+            report({'ERROR'}, '{}: vertex without selected edges is selected'.format(cur_idx))
+            context.scene.cursor.location = v.co
+            return sub_graphs
+        
     #print('=======P======')
     #for idx in point_nums:
     #    cur_point = points[idx]
@@ -337,7 +349,7 @@ def get_sub_graphs(context, mesh, report):
     #print('==================')
     return sub_graphs
 
-def generate_foam(context, mesh, root, shift, report):
+def generate_foam(context, mesh, root, shift, seadogs_tool, report):
     sub_graphs = get_sub_graphs(context, mesh, report)
     foam_object = get_foam_object(root)
 
@@ -346,12 +358,12 @@ def generate_foam(context, mesh, root, shift, report):
         count = 0
         for i, v in enumerate(sg.points): 
 
-            add_key_to_foam(cur_foam, v, shift)
+            add_key_to_foam(cur_foam, v, shift, seadogs_tool)
             if count > max_foams and i < len(sg.points) - 2:
                 count = 0
                 print_foam_links(cur_foam, report)
                 cur_foam = create_new_foam(foam_object)
-                add_key_to_foam(cur_foam, v, shift)
+                add_key_to_foam(cur_foam, v, shift, seadogs_tool)
             count += 1
         print_foam_links(cur_foam, report)
          
@@ -383,6 +395,9 @@ def print_foam_links(foam, report):
         constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
         constraint.target = point_locators[key_count + i + 1]
         constraint.name = 'link_{}_f'.format(i)
+        constraint = point_locators[i].constraints.new(type='TRACK_TO')
+        constraint.target = point_locators[i + 1]
+        constraint.name = 'link_{}_n'.format(i)
         constraint = point_locators[key_count + i].constraints.new(type='TRACK_TO')
         constraint.target = point_locators[i]
         constraint.name = 'link_{}_s'.format(i)
@@ -405,8 +420,7 @@ def GenerateFoam(shift):
             return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
 
         def execute(self, context):
-            scene = context.scene
-            cursor = scene.cursor.location
+            seadogs_tool = context.scene.seadogs_tool
             mesh_object = bpy.context.view_layer.objects.active
 
             selected_objects = [o for o in bpy.context.view_layer.objects.selected if o.name != mesh_object.name]
@@ -418,7 +432,7 @@ def GenerateFoam(shift):
                 
             root_for_foam = selected_objects[0]
 
-            ret = generate_foam(context, mesh_object, root_for_foam, shift, self.report)
+            ret = generate_foam(context, mesh_object, root_for_foam, shift, seadogs_tool, self.report)
             if ret is not None:
                 return {'CANCELLED'}
 
@@ -593,8 +607,18 @@ def FixLocators(skeleton):
     return FixLocatorsImpl
 
 class SeadogsProperties(bpy.types.PropertyGroup):
-    #todo options
-    pass
+    foam_inverted : BoolProperty(
+        name="Inverted foam",
+        description="Foam direction: 'inverted' -- to island, otherwise -- from island.",
+        default = False
+        )
+    foam_depth : FloatProperty(
+        name = "Foam depth",
+        description="Foam depth",
+        default = 60.0,
+        min = 10.0,
+        max = 100.0 
+        )
 
 
 
@@ -617,11 +641,15 @@ class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        scene = context.scene
-        seadogs_tool = scene.seadogs_tool
+        seadogs_tool = context.scene.seadogs_tool
 
         row = layout.row()
         row.label(text = "Foam utils")
+        row = layout.row()
+        row.prop(seadogs_tool, "foam_inverted", text="Inverted foam")
+        row = layout.row()
+        row.prop(seadogs_tool, "foam_depth", text="Foam depth")
+
 
 
         row = layout.row()
@@ -629,6 +657,7 @@ class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
         colR = row.column(align=False)
         colL.operator("seadogs_util.generate_foam_near")
         colR.operator("seadogs_util.generate_foam_far")
+        colR.operator("seadogs_util.generate_foam_farthest")
 
         layout.row().separator()
 
@@ -657,6 +686,7 @@ classes = (
     SETUP_PT_SeadogsUtils,
     GenerateFoam('near'),
     GenerateFoam('far'),
+    GenerateFoam('farthest'),
     FixLocators('man'),
     FixLocators('danny')
 )
