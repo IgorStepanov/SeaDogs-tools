@@ -14,7 +14,7 @@ bl_info = {
     "name": "SeaDogs island foam import",
     "description": "Import Foam files",
     "author": "Wazar",
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "blender": (4, 4, 1),
     "location": "File > Import",
     "warning": "",
@@ -33,17 +33,17 @@ class Point:
         self.idx = idx
         self.links = links
 
-
 class Foam:
     def __init__(self):
         self.points = {}
+        self.links = []
         pass
         
     def parse(self, file_path='', report_func=None):
         state = 'init'
-        depth_file = None
-        v_box_center = None
-        v_box_size = None
+        self.depth_file = None
+        self.v_box_center = None
+        self.v_box_size = None
         with open(file_path, mode='r') as file:
             for line in file:
                 line = line.strip()
@@ -54,15 +54,15 @@ class Foam:
                     if line.startswith('DepthFile'):
                         parts = line.split(sep=';')[0].split(sep='=')
                         parts[1] = parts[1].strip()
-                        depth_file = parts[1]
+                        self.depth_file = parts[1]
                     elif line.startswith('vBoxCenter'):
                         parts = line.split(sep=';')[0].split(sep='=')
                         parts[1] = parts[1].strip()
-                        v_box_center = parts[1]
+                        self.v_box_center = parts[1]
                     elif line.startswith('vBoxSize'):
                         parts = line.split(sep=';')[0].split(sep='=')
                         parts[1] = parts[1].strip()
-                        v_box_size = parts[1]
+                        self.v_box_size = parts[1]
                     elif line.startswith('[GraphPoints]'):
                         state = 'points'
 
@@ -81,9 +81,20 @@ class Foam:
                         matrix = correction_matrix.to_4x4() @ matrix
                         if data[-1] == '':
                             data.pop()
-                        links = [int(v.strip()) for v in data[2:]]
+                        count = int(data[2])
+                        links = [int(v.strip()) for v in data[3:]]
+                        if len(links) % 2 == 1:
+                            report_func({'ERROR'}, 'point links should be even for pnt{}'.format(num))
+                            return {'CANCELLED'}
+                        
+                        if len(links) // 2 != count:
+                            report_func({'ERROR'}, 'point links count should be {}, not {} for pnt{}'.format(count, len(links) // 2))
+                            return {'CANCELLED'}
 
-                        self.points[num] = Point(num, matrix, links)
+                        links_paired = []
+                        for i in range(len(links) // 2):
+                            links_paired.append((links[2*i], links[2*i + 1]))
+                        self.points[num] = Point(num, matrix, links_paired)
                 else:
                     report_func({'ERROR'}, 'Unknown state')
         return None
@@ -94,7 +105,7 @@ def parse_sp(file_path="", report_func=None):
     sp = Foam()
     ret = sp.parse(file_path, report_func)
     if ret is not None:
-        return {'CANCELLED'};
+        return {'CANCELLED'}
     return sp
 
 def import_foam(
@@ -120,8 +131,10 @@ def import_foam(
     points_locator = bpy.data.objects.new(points_locator_name, None)
     collection.objects.link(points_locator)
     points_locator.parent = root
+    points_locator['DepthFile'] = data.depth_file
+    points_locator['vBoxCenter'] = data.v_box_center
+    points_locator['vBoxSize'] = data.v_box_size
 
-    
     for idx in data.points:
 
         locator_name = 'pnt{:04d}'.format(data.points[idx].idx)
@@ -137,14 +150,16 @@ def import_foam(
 
 
     for idx in data.points:
-        for i in range(len(data.points[idx].links) - 1):
-            first_point = data.points[data.points[idx].links[i]]
-            second_point = data.points[data.points[idx].links[i+1]]
+        i = 0
+        for p1, p2 in data.points[idx].links:
+            first_point = data.points[p1]
+            second_point = data.points[p2]
             if first_point.idx == second_point.idx:
                 continue
             constraint = first_point.locator.constraints.new(type='TRACK_TO')
             constraint.target = second_point.locator
-            constraint.name = 'pnt{:04d}_{}'.format(idx, i)
+            constraint.name = 'pnt{:04d}_{:04d}'.format(idx, i)
+            i += 1
             #print('pnt{}_{}| first_point: "{}" second_point: "{}"'.format(idx, i, first_point.locator.name, second_point.locator.name))
 
         

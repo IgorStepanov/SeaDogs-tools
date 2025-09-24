@@ -20,7 +20,7 @@ bl_info = {
     "name": "SeaDogs island foam export",
     "description": "Export Foam files",
     "author": "Wazar",
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "blender": (4, 4, 1),
     "location": "File > Export",
     "warning": "",
@@ -56,23 +56,27 @@ class Point:
 
 
 class Foam:
-    def __init__(self):
+    def __init__(self, depth_file, v_box_center, v_box_size):
         self.points = []
+        self.depth_file = depth_file
+        self.v_box_center = v_box_center
+        self.v_box_size = v_box_size
         
     def generate(self, file_path='', report_func=None):
         with open(file_path, 'w') as file:
             file.write('[Main]\n')
-            file.write('DepthFile = {}\n'.format('!TODO'))
-            file.write('vBoxCenter = {}\n'.format('!TODO'))
-            file.write('vBoxSize = {}\n'.format('!TODO'))
+            file.write('DepthFile = {}\n'.format(self.depth_file))
+            file.write('vBoxCenter = {}\n'.format(self.v_box_center))
+            file.write('vBoxSize = {}\n'.format(self.v_box_size))
             file.write('\n')
             file.write('[GraphPoints]\n')
             for i in range(len(self.points)):
                 matrix = correction_export_matrix.to_4x4() @ self.points[i].matrix
                 matrix.translation *= Vector([-1, 1, 1])
                 vec = matrix.translation
-                links = [str(v) for v in self.points[i].links]
-                file.write('pnt{} = {:.0f},{:.0f},{},\n'.format(self.points[i].idx, vec[0], vec[2], ','.join(links)))
+                links = [str(v[0])+","+str(v[1]) for v in self.points[i].links]
+
+                file.write('pnt{} = {:.0f},{:.0f},{},{},\n'.format(self.points[i].idx, vec[0], vec[2], len(links), ','.join(links)))
                 
             file.write('\n')
         return None
@@ -89,12 +93,23 @@ def export_foam(context, file_path="", report_func=None):
 
 
     points = []
-    
+    depth_file = None
+    v_box_center = None
+    v_box_size = None
 
     # TODO get list of childrens children
     for child in root_children:
         if child.type == 'EMPTY' and child.name == 'points':
             locator = child
+            depth_file = locator['DepthFile']
+            if depth_file is None:
+                depth_file = ''
+            v_box_center = locator['vBoxCenter']
+            if v_box_center is None:
+                v_box_center = ''
+            v_box_size = locator['vBoxSize']
+            if v_box_size is None:
+                v_box_size = ''
             for child in locator.children:
                 if child.type == 'EMPTY':
                     points.append(child)
@@ -105,7 +120,7 @@ def export_foam(context, file_path="", report_func=None):
 
     bpy.context.scene.cursor.location = root.location
     bpy.context.view_layer.objects.active = root
-    sp = Foam()
+    sp = Foam(depth_file, v_box_center, v_box_size)
     sp.points = [None] * len(points)
     
     loc_to_point = {}
@@ -157,11 +172,8 @@ def export_foam(context, file_path="", report_func=None):
         src_idx = loc_to_point[remove_blender_name_postfix(point.name)].idx
         dst_idx = loc_to_point[remove_blender_name_postfix(target.name)].idx
 
-        if len(base_point.links) > 0 and base_point.links[-1] == src_idx:
-            base_point.links.append(dst_idx)
-        else:
-            base_point.links.append(src_idx)
-            base_point.links.append(dst_idx)
+        base_point.links.append((src_idx, dst_idx))
+
 
     ret = sp.generate(file_path, report_func)
     if ret is not None:
