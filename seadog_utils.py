@@ -11,8 +11,11 @@ import bmesh
 import bpy
 from bpy.props import StringProperty, BoolProperty, PointerProperty, IntProperty, FloatProperty
 import numpy
+import sys
 from mathutils import Vector, Matrix
+from mathutils.bvhtree import BVHTree
 import re
+import random
 from math import *
 
 foam_depth = 60.0
@@ -42,6 +45,16 @@ def get_foam_object(root):
         
         
     return foams_locator
+
+
+def get_points_object(root):
+    root_children = root.children
+    locator = None
+    for child in root_children:
+        if child.type == 'EMPTY' and remove_blender_name_postfix(child.name) == 'points':
+            locator = child
+            break
+    return locator
 
 
 def create_new_foam(foam_object):
@@ -442,7 +455,334 @@ def GenerateFoam(shift):
 
 
 
+def create_random_point(foam_root, bounds, bvh_tree, num):
+    seadogs_tool = bpy.context.scene.seadogs_tool
+    max_range = seadogs_tool.path_point_max_range
+    x_min, x_max, y_min, y_max = bounds
+    x_min -= max_range
+    y_min -= max_range
 
+    x_max += max_range
+    y_max += max_range
+
+
+    src_point = None
+    while True:
+
+        src_point = Vector((random.uniform(x_min, x_max), random.uniform(y_min, y_max), -100))
+        direction = Vector((0, 0, 1))
+
+        hit_location, hit_normal, face_index, distance = bvh_tree.ray_cast(src_point, direction)
+        if hit_location is None:
+            break
+
+    src_point[2] = 0
+    locator_name = 'pnt{:04d}'.format(num)
+    collection = foam_root.users_collection[0]
+    locator = bpy.data.objects.new(locator_name, None)
+    collection.objects.link(locator)
+    locator.parent = foam_root
+    locator.empty_display_type = 'ARROWS'
+    locator.empty_display_size = 0.5
+    locator.matrix_basis = Matrix.Translation(src_point)
+
+
+
+def check_accessible(src, dst, bvh_tree):
+
+    src_point = src.matrix_world.translation.copy()
+    dst_point = dst.matrix_world.translation.copy()
+
+    src_point[2] = 0.1
+    dst_point[2] = 0.1
+
+    direction = dst_point - src_point
+    direction_norm = direction.normalized()
+    direction_length = direction.length
+    hit_location, hit_normal, face_index, distance = bvh_tree.ray_cast(src_point, direction_norm, direction_length)
+    if hit_location is None:
+        return True
+
+    return False
+
+
+def create_path(src, dst, num):
+    src_name = remove_blender_name_postfix(src.name)
+    constraint = src.constraints.new(type='TRACK_TO')
+    constraint.target = dst
+    constraint.name = '{}_{:04d}'.format(src_name, num)
+
+
+
+def remove_double_path(src, dst, report):
+    foam_object = src.parent
+    if foam_object is None:
+        report({'ERROR'}, 'points object not found')
+        return {'CANCELLED'}
+
+    for c in src.constraints:
+        if c.target is not None and c.target == dst:
+            src.constraints.remove(c)
+
+
+    for c in dst.constraints:
+        if c.target is not None and c.target == src:
+            dst.constraints.remove(c)
+
+
+def create_double_path(src, dst, report):
+    foam_object = src.parent
+    if foam_object is None:
+        report({'ERROR'}, 'points object not found')
+        return {'CANCELLED'}
+
+    src_name = remove_blender_name_postfix(src.name)
+    dst_name = remove_blender_name_postfix(dst.name)
+    
+    src_name_set = set()
+    dst_name_set = set()
+    src_cname = None
+    dst_cname = None
+
+    for cur in foam_object.children:
+        if cur.type != 'EMPTY':
+            continue
+        for c in cur.constraints:
+            cname = remove_blender_name_postfix(c.name)
+            if cname.startswith(src_name+'_'):
+                src_name_set.add(cname)
+            if cname.startswith(dst_name+'_'):
+                dst_name_set.add(cname)
+
+    for i in range(len(src_name_set)+1):
+        name = '{}_{:04d}'.format(src_name, i)
+        if name not in src_name_set:
+            src_cname = name
+            break
+
+    for i in range(len(dst_name_set)+1):
+        name = '{}_{:04d}'.format(dst_name, i)
+        if name not in dst_name_set:
+            dst_cname = name
+            break
+
+    constraint = src.constraints.new(type='TRACK_TO')
+    constraint.target = dst
+    constraint.name = src_cname
+
+    constraint = dst.constraints.new(type='TRACK_TO')
+    constraint.target = src
+    constraint.name = dst_cname
+
+
+def generate_island_foam(context, root, mesh_root_list, seadogs_tool, report):
+
+    foam_object = get_points_object(root)
+    if foam_object is None:
+        report({'ERROR'}, 'points object not found')
+        return {'CANCELLED'}
+
+    num = 0
+
+    points = []
+    for cur in foam_object.children:
+        if cur.type != 'EMPTY':
+            continue
+        cur.name = 'pnt{:04d}'.format(num)
+        cur.matrix_world.translation[2] = 0
+        cur.constraints.clear()
+
+        num += 1
+        points.append(cur)
+
+
+    mesh_list = []
+    for cur in mesh_root_list:
+        print('meshes: {}'.format([o.name for o in cur.children if o.type == 'MESH']))
+        mesh_list.extend([o for o in cur.children if o.type == 'MESH'])
+
+
+    bm = bmesh.new()
+
+    for me in mesh_list:
+        bm.from_mesh(me.data)
+
+    bvh_tree = BVHTree.FromBMesh(bm, epsilon=0.0001)
+
+    for i in range(len(points)):
+        con_num = 0
+        for j in range(len(points)): 
+            if i == j:
+                continue
+            source_point = points[i]
+            target_point = points[j]
+            if check_accessible(source_point, target_point, bvh_tree):
+                create_path(source_point, target_point, con_num)
+                con_num += 1
+    bm.free()
+
+
+
+
+def get_2d_bounds(bm):
+    x_min = sys.float_info.max
+    x_max = sys.float_info.min
+    y_min = sys.float_info.max
+    y_max = sys.float_info.min
+
+    for v in bm.verts:
+        if x_min > v.co[0]:
+            x_min = v.co[0]
+        if x_max < v.co[0]:
+            x_max = v.co[0]
+        if y_min > v.co[1]:
+            y_min = v.co[1]
+        if y_max < v.co[1]:
+            y_max = v.co[1]
+
+    return (x_min, x_max, y_min, y_max)
+
+
+def generate_island_foam_points(context, root, mesh_root_list, seadogs_tool, report):
+
+    foam_object = get_points_object(root)
+    if foam_object is None:
+        report({'ERROR'}, 'points object not found')
+        return {'CANCELLED'}
+
+    num = len(foam_object.children)
+
+    points = []
+    count = seadogs_tool.path_point_count
+
+    mesh_list = []
+    for cur in mesh_root_list:
+        print('meshes: {}'.format([o.name for o in cur.children if o.type == 'MESH']))
+        mesh_list.extend([o for o in cur.children if o.type == 'MESH'])
+
+
+    bm = bmesh.new()
+
+    for me in mesh_list:
+        bm.from_mesh(me.data)
+
+    bvh_tree = BVHTree.FromBMesh(bm, epsilon=0.0001)
+    bounds = get_2d_bounds(bm)
+    for i in range(count):
+        create_random_point(foam_object, bounds, bvh_tree, num+i)
+        
+        
+    bm.free()
+
+
+
+class GenerateIslandFoam(bpy.types.Operator):
+    bl_idname = "seadogs_util.generate_island_foam"
+    bl_label = "Generate island foam"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+        foam_root = bpy.context.view_layer.objects.active
+
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected if o.name != foam_root.name]
+        
+        wrong_objects = [o for o in selected_objects if o.type != 'EMPTY' or remove_blender_name_postfix(o.name) != 'root']
+        if (len(wrong_objects) > 0) or foam_root.type != 'EMPTY' or remove_blender_name_postfix(foam_root.name) != 'root':
+            self.report({'ERROR'}, 'Selected objects should be root')
+            return {'CANCELLED'}
+            
+        
+
+        ret = generate_island_foam(context, foam_root, selected_objects, seadogs_tool, self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+class GenerateIslandFoamPoints(bpy.types.Operator):
+    bl_idname = "seadogs_util.generate_island_foam_points"
+    bl_label = "Generate island foam"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+        foam_root = bpy.context.view_layer.objects.active
+
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected if o.name != foam_root.name]
+        
+        wrong_objects = [o for o in selected_objects if o.type != 'EMPTY' or remove_blender_name_postfix(o.name) != 'root']
+        if (len(wrong_objects) > 0) or foam_root.type != 'EMPTY' or remove_blender_name_postfix(foam_root.name) != 'root':
+            self.report({'ERROR'}, 'Selected objects should be root')
+            return {'CANCELLED'}
+            
+        
+
+        ret = generate_island_foam_points(context, foam_root, selected_objects, seadogs_tool, self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+    
+
+class AddPath(bpy.types.Operator):
+    bl_idname = "seadogs_util.add_path"
+    bl_label = "Add path"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return (len(context.view_layer.objects.selected) == 2 
+                and context.view_layer.objects.selected[0].parent == context.view_layer.objects.selected[1].parent 
+                and context.view_layer.objects.selected[0].type == 'EMPTY'
+                and context.view_layer.objects.selected[1].type == 'EMPTY' 
+                and context.view_layer.objects.selected[0].parent is not None)
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+
+        if len(context.view_layer.objects.selected) != 2:
+            self.report({'ERROR'}, 'Two locators should be selected')
+            return {'CANCELLED'}
+        
+
+
+        ret = create_double_path(context.view_layer.objects.selected[0], context.view_layer.objects.selected[1], self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+    
+class RemovePath(bpy.types.Operator):
+    bl_idname = "seadogs_util.remove_path"
+    bl_label = "Remove path"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return (len(context.view_layer.objects.selected) == 2 
+                and context.view_layer.objects.selected[0].parent == context.view_layer.objects.selected[1].parent 
+                and context.view_layer.objects.selected[0].type == 'EMPTY'
+                and context.view_layer.objects.selected[1].type == 'EMPTY' 
+                and context.view_layer.objects.selected[0].parent is not None)
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+
+        if len(context.view_layer.objects.selected) != 2:
+            self.report({'ERROR'}, 'Two locators should be selected')
+            return {'CANCELLED'}
+        
+
+
+        ret = remove_double_path(context.view_layer.objects.selected[0], context.view_layer.objects.selected[1], self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
 
 locator_to_bone = {
     'danny': {
@@ -619,6 +959,22 @@ class SeadogsProperties(bpy.types.PropertyGroup):
         min = 10.0,
         max = 100.0 
         )
+    
+    path_point_count : IntProperty(
+        name = "Path point count",
+        description="Path point count",
+        default = 45,
+        min = 1,
+        max = 500 
+        )
+    
+    path_point_max_range : FloatProperty(
+        name = "Path point max range",
+        description="Path point max range",
+        default = 500.0,
+        min = 100.0,
+        max = 2000.0 
+        )
 
 
 
@@ -650,18 +1006,38 @@ class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
         row = layout.row()
         row.prop(seadogs_tool, "foam_depth", text="Foam depth")
 
-
-
+        row = layout.row()
+        row.label(text = "Generate foam")
         row = layout.row()
         colL = row.column(align=False)
         colR = row.column(align=False)
-        colL.operator("seadogs_util.generate_foam_near")
-        colR.operator("seadogs_util.generate_foam_far")
-        colR.operator("seadogs_util.generate_foam_farthest")
+        colL.operator("seadogs_util.generate_foam_near", text='near')
+        colR.operator("seadogs_util.generate_foam_far", text='near')
+        colR.operator("seadogs_util.generate_foam_farthest", text='farthest')
 
         layout.row().separator()
 
+        row = layout.row()
+        row.label(text = "Island foam util")
+        row = layout.row()
+        row.prop(seadogs_tool, "path_point_count", text="Path point count")
+        row = layout.row()
+        row.prop(seadogs_tool, "path_point_max_range", text="Path point max range")
+        row = layout.row()
+        colL = row.column(align=False)
+        colR = row.column(align=False)
+        colL.operator("seadogs_util.generate_island_foam_points", text='Generate points')
+        colL.operator(AddPath.bl_idname, text='Add path')
 
+        colR.operator("seadogs_util.generate_island_foam", text='Generate pathes')
+        colR.operator(RemovePath.bl_idname, text='Remove path')
+
+
+
+
+        
+
+        layout.row().separator()
         row = layout.row()
         row.label(text = "Character util")
 
@@ -688,7 +1064,11 @@ classes = (
     GenerateFoam('far'),
     GenerateFoam('farthest'),
     FixLocators('man'),
-    FixLocators('danny')
+    FixLocators('danny'),
+    GenerateIslandFoam,
+    GenerateIslandFoamPoints,
+    AddPath,
+    RemovePath
 )
 
 def register():
