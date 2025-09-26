@@ -784,6 +784,314 @@ class RemovePath(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class MinMaxCollector:
+    def __init__(self):
+        self.x_min = sys.float_info.max
+        self.x_max = sys.float_info.min
+        self.y_min = sys.float_info.max
+        self.y_max = sys.float_info.min
+        self.z_min = sys.float_info.max
+        self.z_max = sys.float_info.min
+
+    def add_vertex(self, v):
+        if self.x_min > v.co[0]:
+            self.x_min = v.co[0]
+        if self.x_max < v.co[0]:
+            self.x_max = v.co[0]
+        if self.y_min > v.co[1]:
+            self.y_min = v.co[1]
+        if self.y_max < v.co[1]:
+            self.y_max = v.co[1]
+        if self.z_min > v.co[2]:
+            self.z_min = v.co[2]
+        if self.z_max < v.co[2]:
+            self.z_max = v.co[2]
+
+
+    def get_min(self):
+        return Vector((self.x_min, self.y_min, self.z_min))
+    
+    def get_sizes(self):
+        return (self.x_max - self.x_min, self.y_max - self.y_min, self.z_max - self.z_min)
+
+
+
+def consolidate_vertexes_from_buckets_with_ver(ver1, buckets, delta, counts, x, y, z):
+
+    moved = 0
+    x_s = x - 1 if x > 1 else x
+    x_f = x + 2 if x < counts[0] - 1 else x + 1
+
+    y_s = y - 1 if y > 1 else y
+    y_f = y + 2 if y < counts[1] - 1 else y + 1
+
+    z_s = z - 1 if z > 1 else z
+    z_f = z + 2 if z < counts[2] - 1 else z + 1
+
+    for i in range(x_s, x_f):
+        for j in range(y_s, y_f):
+            for k in range(z_s, z_f):
+                if buckets[get_coord(i, j, k, counts)] is None:
+                    continue
+                for n in range(len(buckets[get_coord(i, j, k, counts)])):
+                    ver2 = buckets[get_coord(i, j, k, counts)][n]
+                    if (ver2.co-ver1.co).length <= delta and ver2.co != ver1.co:
+                        ver2.co = ver1.co
+                        moved += 1
+
+
+    return moved
+
+
+def consolidate_vertexes_from_buckets(buckets, delta, counts):
+    total_moved = 0
+    for i in range(counts[0]):
+        print('i = {}/{}'.format(i, counts[0]))
+        for j in range(counts[1]):
+            for k in range(counts[2]):
+                if buckets[get_coord(i, j, k, counts)] is None:
+                    continue
+                while True:
+                    moved = 0
+                    for n in range(len(buckets[get_coord(i, j, k, counts)])):
+                        ver = buckets[get_coord(i, j, k, counts)][n]
+                        moved += consolidate_vertexes_from_buckets_with_ver(ver, buckets, delta, counts, i, j, k)
+                    if moved == 0:
+                        break
+                    else:
+                       print('bucket[{}][{}][{}] moved {}'.format(i, j, k, moved)) 
+                       total_moved += moved
+    print('consolidating finised. moved {} verts'.format(total_moved)) 
+
+
+def get_coord(i, j, k, sizes):
+    return i*sizes[1]*sizes[2] + j*sizes[2] + k
+
+def consolidate_vertexes(context, mesh_list, seadogs_tool, report):
+
+    delta = seadogs_tool.consolidate_delta
+    bucket_size = seadogs_tool.bucket_size
+
+    if len(mesh_list) == 0:
+        report({'WARNING'}, 'No meshes selected')
+        return None
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+
+    for cur in mesh_list:
+        cur.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_list[0]
+
+    bpy.ops.object.mode_set(mode='EDIT')
+
+
+    bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
+
+    bounds = MinMaxCollector()
+    for cur in bms:
+        for v in cur.verts:
+            bounds.add_vertex(v)
+   
+    counts = [int(dim / bucket_size) + 1 for dim in bounds.get_sizes()]
+
+
+    total_count = counts[0] * counts[1] * counts[2]
+
+
+    print('size={} buckets={}'.format(bounds.get_sizes(), counts))
+    print('allocating buckets...')
+    buckets = [None]*total_count
+    #for i in range(counts[0]):
+    #    print('i = {}/{}'.format(i, counts[0]))
+    #    buckets[i] = [None]*counts[1]
+    #    for j in range(counts[1]):
+    #        buckets[i][j] = [None]*counts[2]
+    print('done')
+
+    print('placing vertexes...')
+    for i in range(len(bms)):
+        cur = bms[i]
+        print('mesh {}/{}'.format(i, len(bms)))
+        for v in cur.verts:
+            x_bucket = int(v.co[0] / bucket_size)
+            y_bucket = int(v.co[1] / bucket_size)
+            z_bucket = int(v.co[2] / bucket_size)
+
+            if buckets[get_coord(x_bucket, y_bucket, z_bucket, counts)] is None:
+                buckets[get_coord(x_bucket, y_bucket, z_bucket, counts)] = []
+            buckets[get_coord(x_bucket, y_bucket, z_bucket, counts)].append(v)
+
+    print('done')
+
+    print('consolidating...')
+    consolidate_vertexes_from_buckets(buckets, delta, counts)
+    print('done')
+
+    for i in range(len(bms)):
+        bmesh.update_edit_mesh(mesh_list[i].data, loop_triangles=False, destructive=False)
+
+
+def remove_void_faces(context, mesh_list, seadogs_tool, report):
+
+    if len(mesh_list) == 0:
+        report({'WARNING'}, 'No meshes selected')
+        return None
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+
+    for cur in mesh_list:
+        cur.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_list[0]
+
+    bpy.ops.object.mode_set(mode='EDIT')
+
+
+    bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
+
+    count = 0
+    for cur in bms:
+        for f in cur.faces:
+            if f.calc_area() == 0 or f.calc_perimeter() == 0:
+                f.select_set(True)
+                count += 1
+    bpy.ops.mesh.split()
+    bpy.ops.mesh.delete(type='VERT')
+
+    print('deleted zero-size faces count {}'.format(count))
+
+
+    for i in range(len(bms)):
+        bmesh.update_edit_mesh(mesh_list[i].data)
+
+    bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
+
+    empty_objects = []
+    for i in range(len(bms)):
+        if len(bms[i].verts) == 0:
+            empty_objects.append(i)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    bpy.ops.object.select_all(action='DESELECT')
+
+    count = 0
+    for i in empty_objects:
+        mesh_list[i].select_set(True)
+        count += 1
+
+    bpy.ops.object.delete(use_global=False, confirm=False)
+
+    print('deleted empty object {}'.format(count))
+
+    
+
+def detach_meshes(meshes_map):
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for k, v in meshes_map.items():
+        bpy.ops.object.select_all(action='DESELECT')
+        for m in v:
+            m.select_set(True)
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+
+def attach_meshes(meshes_map):
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    for k, v in meshes_map.items():
+        bpy.ops.object.select_all(action='DESELECT')
+        for m in v:
+            m.select_set(True)
+        
+        bpy.context.view_layer.objects.active = bpy.data.objects[k]
+        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+
+class ConsolidateVertexes(bpy.types.Operator):
+    bl_idname = "seadogs_util.consolidate_vertexes"
+    bl_label = "Consolidate vertexes"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
+        
+        wrong_objects = [o for o in selected_objects if o.type != 'EMPTY' or remove_blender_name_postfix(o.name) != 'root']
+        if len(wrong_objects) > 0:
+            self.report({'ERROR'}, 'Selected objects should be root')
+            return {'CANCELLED'}
+            
+        mesh_list = []
+        root_map = {}
+        for cur in selected_objects:
+            print('meshes: {}'.format([o.name for o in cur.children if o.type == 'MESH']))
+            meshes = [o for o in cur.children if o.type == 'MESH']
+            root_map[cur.name] = meshes
+            mesh_list.extend(meshes)
+
+
+        detach_meshes(root_map)
+        ret = consolidate_vertexes(context, mesh_list, seadogs_tool, self.report)
+        attach_meshes(root_map)
+        if ret is not None:
+            return {'CANCELLED'}
+
+
+        return {'FINISHED'}
+    
+class ConsolidateVertexesForMeshes(bpy.types.Operator):
+    bl_idname = "seadogs_util.consolidate_vertexes_for_meshes"
+    bl_label = "Consolidate vertexes for mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
+        
+        wrong_objects = [o for o in selected_objects if o.type != 'MESH']
+        if len(wrong_objects) > 0:
+            self.report({'ERROR'}, 'Selected objects should be a mesh')
+            return {'CANCELLED'}
+
+        ret = consolidate_vertexes(context, selected_objects, seadogs_tool, self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+class DeleteEmpty(bpy.types.Operator):
+    bl_idname = "seadogs_util.delete_empty"
+    bl_label = "Delete empty"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        seadogs_tool = context.scene.seadogs_tool
+
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
+        
+        wrong_objects = [o for o in selected_objects if o.type != 'EMPTY' or remove_blender_name_postfix(o.name) != 'root']
+        if len(wrong_objects) > 0:
+            self.report({'ERROR'}, 'Selected objects should be root')
+            return {'CANCELLED'}
+            
+        mesh_list = []
+        for cur in selected_objects:
+            print('meshes: {}'.format([o.name for o in cur.children if o.type == 'MESH']))
+            meshes = [o for o in cur.children if o.type == 'MESH']
+            mesh_list.extend(meshes)
+
+        ret = remove_void_faces(context, mesh_list, seadogs_tool, self.report)
+        if ret is not None:
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
 locator_to_bone = {
     'danny': {
         'camera': 16, 
@@ -975,8 +1283,18 @@ class SeadogsProperties(bpy.types.PropertyGroup):
         min = 100.0,
         max = 2000.0 
         )
+    
+    consolidate_delta : FloatProperty(
+        name = "Delta",
+        description="Delta",
+        default = 0.001,
+        )
 
-
+    bucket_size : FloatProperty(
+        name = "Bucket size",
+        description="Bucket size",
+        default = 0.01,
+        )
 
 
 
@@ -1032,10 +1350,19 @@ class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
         colR.operator("seadogs_util.generate_island_foam", text='Generate pathes')
         colR.operator(RemovePath.bl_idname, text='Remove path')
 
-
-
-
-        
+        layout.row().separator()
+        row = layout.row()
+        row.label(text = "Consolidate vertexes util")
+        row = layout.row()
+        row.prop(seadogs_tool, "consolidate_delta", text="Delta")
+        row = layout.row()
+        row.prop(seadogs_tool, "bucket_size", text="Bucket size")
+        row = layout.row()
+        row.operator(ConsolidateVertexes.bl_idname, text='Consolidate')
+        row = layout.row()
+        row.operator(ConsolidateVertexesForMeshes.bl_idname, text='Consolidate for mesh')
+        row = layout.row()
+        row.operator(DeleteEmpty.bl_idname, text='Delete empty')
 
         layout.row().separator()
         row = layout.row()
@@ -1068,7 +1395,10 @@ classes = (
     GenerateIslandFoam,
     GenerateIslandFoamPoints,
     AddPath,
-    RemovePath
+    RemovePath,
+    ConsolidateVertexes,
+    ConsolidateVertexesForMeshes,
+    DeleteEmpty
 )
 
 def register():
