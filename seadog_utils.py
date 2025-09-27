@@ -17,10 +17,35 @@ from mathutils.bvhtree import BVHTree
 import re
 import random
 from math import *
+from io import StringIO 
 
-foam_depth = 60.0
+class CapturingInfo():
+    def __init__(self, report):
+        self.report = report
 
-max_foams = 35
+    def __enter__(self):
+        self._stdout = sys.stdout
+        
+        sys.stdout = self._stringio = StringIO()
+        return self
+    def __exit__(self, *args):
+        sys.stdout = self._stdout
+
+        for cur in self._stringio.getvalue().splitlines():
+            if cur.startswith('Debug: '):
+                self.report({'DEBUG'}, cur[len('Debug: '):])
+            elif cur.startswith('Info: '):
+                self.report({'INFO'}, cur[len('Info: '):])
+            elif cur.startswith('Warning: '):
+                self.report({'WARNING'}, cur[len('Warning: '):])
+            elif cur.startswith('Error: '):
+                self.report({'ERROR'}, cur[len('Error: '):])
+            elif cur.startswith('Critical: '):
+                self.report({'CRITICAL'}, cur[len('Critical: '):])
+            else:
+                print(cur)
+
+        del self._stringio    # free up some memory
 
 def remove_blender_name_postfix(name):
     return re.sub(r'\.\d{3}', '', name)
@@ -372,7 +397,7 @@ def generate_foam(context, mesh, root, shift, seadogs_tool, report):
         for i, v in enumerate(sg.points): 
 
             add_key_to_foam(cur_foam, v, shift, seadogs_tool)
-            if count > max_foams and i < len(sg.points) - 2:
+            if count > seadogs_tool.max_foam_points and i < len(sg.points) - 2:
                 count = 0
                 print_foam_links(cur_foam, report)
                 cur_foam = create_new_foam(foam_object)
@@ -931,6 +956,30 @@ def consolidate_vertexes(context, mesh_list, seadogs_tool, report):
         bmesh.update_edit_mesh(mesh_list[i].data, loop_triangles=False, destructive=False)
 
 
+def cleanup_cycle(bms, report):
+    for cur in bms:
+        for v in cur.verts:
+            v.select_set(True)
+        for v in cur.edges:
+            v.select_set(True)
+        for v in cur.faces:
+            v.select_set(True)
+    print('degenerate:')
+    with CapturingInfo(report) as _:
+        bpy.ops.mesh.dissolve_degenerate()
+
+    for cur in bms:
+        for v in cur.verts:
+            v.select_set(True)
+        for v in cur.edges:
+            v.select_set(True)
+        for v in cur.faces:
+            v.select_set(True)
+
+    print('delete_loose:')
+    with CapturingInfo(report) as _:
+        bpy.ops.mesh.delete_loose()
+
 def remove_void_faces(context, mesh_list, seadogs_tool, report):
 
     if len(mesh_list) == 0:
@@ -947,21 +996,29 @@ def remove_void_faces(context, mesh_list, seadogs_tool, report):
 
 
     bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
-
-    count = 0
     for cur in bms:
-        for f in cur.faces:
-            if f.calc_area() == 0 or f.calc_perimeter() == 0:
-                f.select_set(True)
-                count += 1
-    bpy.ops.mesh.split()
-    bpy.ops.mesh.delete(type='VERT')
+        for v in cur.verts:
+            v.select_set(True)
+        for v in cur.edges:
+            v.select_set(True)
+        for v in cur.faces:
+            v.select_set(True)
 
-    print('deleted zero-size faces count {}'.format(count))
-
+    #print('remove_doubles:')
+    #with CapturingInfo(report) as _:
+    #    bpy.ops.mesh.remove_doubles()
 
     for i in range(len(bms)):
         bmesh.update_edit_mesh(mesh_list[i].data)
+
+
+
+    for i in range(10):
+        bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
+        cleanup_cycle(bms, report)
+        for i in range(len(bms)):
+            bmesh.update_edit_mesh(mesh_list[i].data)
+
 
     bms = [bmesh.from_edit_mesh(obj.data) for obj in mesh_list]
 
@@ -1260,6 +1317,15 @@ class SeadogsProperties(bpy.types.PropertyGroup):
         description="Foam direction: 'inverted' -- to island, otherwise -- from island.",
         default = False
         )
+    
+    max_foam_points : IntProperty(
+        name = "Max foam point count",
+        description="Max foam point count",
+        default = 35,
+        min = 10,
+        max = 100
+        )
+
     foam_depth : FloatProperty(
         name = "Foam depth",
         description="Foam depth",
@@ -1323,6 +1389,10 @@ class SETUP_PT_SeadogsUtils(MAIN_PT_SeadogsUtils, bpy.types.Panel):
         row.prop(seadogs_tool, "foam_inverted", text="Inverted foam")
         row = layout.row()
         row.prop(seadogs_tool, "foam_depth", text="Foam depth")
+        row = layout.row()
+        row.prop(seadogs_tool, "max_foam_points", text="Max foam point count")
+
+
 
         row = layout.row()
         row.label(text = "Generate foam")
