@@ -2463,22 +2463,26 @@ class MarkToSmoothNormals(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         cursor = scene.cursor.location
-        obj = bpy.context.view_layer.objects.active
-        
-        mesh = obj.data
-        
-        attribute = mesh.attributes.get(vertex_smooth_mark_name)
-        if attribute is None:
-            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
 
-        bm = bmesh.from_edit_mesh(mesh)
-        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
 
-        for vert in bm.verts:  
-            if vert.select:
-                vert[layer] = True
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
 
-        bmesh.update_edit_mesh(mesh)
+        for obj in selected_objects:
+            print('selected: '+obj.name)
+            mesh = obj.data
+            
+            attribute = mesh.attributes.get(vertex_smooth_mark_name)
+            if attribute is None:
+                attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+
+            bm = bmesh.from_edit_mesh(mesh)
+            layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+            for vert in bm.verts:  
+                if vert.select:
+                    vert[layer] = True
+            bmesh.update_edit_mesh(mesh)
+
         return {'FINISHED'}
 
 
@@ -2495,29 +2499,24 @@ class UnMarkToSmoothNormals(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         cursor = scene.cursor.location
-        obj = bpy.context.view_layer.objects.active
-        
-        mesh = obj.data
-        
-        attribute = mesh.attributes.get(vertex_smooth_mark_name)
-        if attribute is None:
-            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
-        
-        
-        
-        bm = bmesh.from_edit_mesh(mesh)
-        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
 
-        for vert in bm.verts:
-            print(f"Previous value for {vert} : {vert[layer]}")
-            
-            if vert.select:
-                print(f"SELECTED {vert}")
-                vert[layer] = False
-            
-            print(f"New value for {vert} : {vert[layer]}")
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
 
-        bmesh.update_edit_mesh(mesh)
+        for obj in selected_objects:
+            mesh = obj.data
+            
+            attribute = mesh.attributes.get(vertex_smooth_mark_name)
+            if attribute is None:
+                attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+
+            bm = bmesh.from_edit_mesh(mesh)
+            layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+            for vert in bm.verts:    
+                if vert.select:
+                    vert[layer] = False
+            bmesh.update_edit_mesh(mesh)
+
         return {'FINISHED'}
         
 class SelectSmoothedNormals(bpy.types.Operator):
@@ -2531,27 +2530,30 @@ class SelectSmoothedNormals(bpy.types.Operator):
         return bpy.context.active_object != None and bpy.context.active_object.mode == 'EDIT'
 
     def execute(self, context):
-        obj = bpy.context.view_layer.objects.active
-        
-        mesh = obj.data
-        
-        attribute = mesh.attributes.get(vertex_smooth_mark_name)
-        if attribute is None:
-            attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
-        
-        
-        
-        bm = bmesh.from_edit_mesh(mesh)
-        layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
 
-        for vert in bm.verts:
+        selected_objects = [o for o in bpy.context.view_layer.objects.selected]
 
-            if vert[layer]:
-                vert.select_set(True)
-            else:
-                vert.select_set(False)
+        for obj in selected_objects:
 
-        bmesh.update_edit_mesh(mesh)
+            mesh = obj.data
+            
+            attribute = mesh.attributes.get(vertex_smooth_mark_name)
+            if attribute is None:
+                attribute = mesh.attributes.new(name=vertex_smooth_mark_name, type="BOOLEAN", domain="POINT")
+            
+            
+            
+            bm = bmesh.from_edit_mesh(mesh)
+            layer = bm.verts.layers.bool.get(vertex_smooth_mark_name)
+
+            for vert in bm.verts:
+
+                if vert[layer]:
+                    vert.select_set(True)
+                else:
+                    vert.select_set(False)
+
+            bmesh.update_edit_mesh(mesh)
         return {'FINISHED'}      
 
 
