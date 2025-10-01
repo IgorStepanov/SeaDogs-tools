@@ -815,6 +815,10 @@ fix_rules = {
         57: lambda a, j, fn : a if fn == 0 else j[57][0],
         70: lambda a, j, fn : hand_make_straight(a, j, 57, fn, 70)
     },
+    'do_cuirass_anim': {
+        2: lambda a, j, fn : create_cuirass_anim(a, j, 2, fn, 7),
+        7: lambda a, j, fn : a if fn == 0 else j[7][0],
+    }
 
 }
 
@@ -848,15 +852,39 @@ def hand_make_straight(point_q, joints, middle_num, fn, bone_num):
     current_needed_q = half_transform_q @ current_real_q
 
 
-    if bone_num == 69 and fn >= 13319 and fn <= 13345:
-        base_frame = 13324
+    if bone_num == 69 and  (fn >= 13386 and fn <= 13412):
+        base_frame = 13391 #13324
         base_q = mathutils.Quaternion((0.527591, -0.425861, -0.734265, -0.033846))
+        calculated_base_q = hand_make_straight(joints[69][base_frame], joints, middle_num, base_frame, -1)
+        transform_q = base_q @ calculated_base_q.inverted()
+        current_needed_q = transform_q @ current_needed_q
+
+    if bone_num == 69 and  ((fn >= 22806 and fn <= 22852) or (fn >= 22733 and fn <= 22794)):# or (fn >= 22803 and fn <= 22864) or (fn >= 22733 and fn <= 22794)): #fn >= 13319 and fn <= 13345:
+        base_frame = 22820 #13324
+        base_q = mathutils.Quaternion((0.547562, -0.472662, -0.654871, -0.218886))
         calculated_base_q = hand_make_straight(joints[69][base_frame], joints, middle_num, base_frame, -1)
         transform_q = base_q @ calculated_base_q.inverted()
         current_needed_q = transform_q @ current_needed_q
 
 
     return current_needed_q
+
+
+
+def create_cuirass_anim(point_q, joints, changing_num, fn, src_num):
+    if fn == 0:
+        return point_q
+    
+    a1 = mathutils.Quaternion((joints[src_num][0][0], joints[src_num][0][1], joints[src_num][0][2], joints[src_num][0][3]))
+    a2 = mathutils.Quaternion((joints[src_num][fn][0], joints[src_num][fn][1], joints[src_num][fn][2], joints[src_num][fn][3]))
+    
+
+    a2a1 = a2 @ a1.inverted()
+    
+    b1 = mathutils.Quaternion((point_q[0], point_q[1], point_q[2], point_q[3]))
+    b2 = a2a1 @ b1
+
+    return b2
     
 
 def transform_point_skirt(point_q, base_num, joints, mod_num, direction, rot = None):
