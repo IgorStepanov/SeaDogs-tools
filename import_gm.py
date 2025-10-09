@@ -1150,28 +1150,30 @@ def import_gm(
         hull_num = hull_num_int
         texture_path_found = None
 
-        for ship_dir in Path(textures_path).rglob(f'**/{file_name}'):
-            for hull_dir in ([f'hull{hull_num}',] if hull_num is not None else []) + ['hull1']:
-                if (ship_dir/hull_dir).exists() and (ship_dir/hull_dir/texture_file).exists():
-                    texture_path_found = ship_dir/hull_dir/texture_file
-                    break
-            if texture_path_found is not None:
-                break
-
-        if texture_path_found is None:
+        if texture_file is not None:
             for ship_dir in Path(textures_path).rglob(f'**/{file_name}'):
-                for tex_file in ship_dir.rglob(f'**/{texture_file}'):
-                    texture_path_found = tex_file
-                    break
+                for hull_dir in ([f'hull{hull_num}',] if hull_num is not None else []) + ['hull1']:
+                    if (ship_dir/hull_dir).exists() and (ship_dir/hull_dir/texture_file).exists():
+                        texture_path_found = ship_dir/hull_dir/texture_file
+                        break
                 if texture_path_found is not None:
                     break
 
-        if texture_path_found is None:
-            for ship_dir in Path(textures_path).rglob(f'**/{texture_file}'):
-                texture_path_found = ship_dir
-                break
+            if texture_path_found is None:
+                for ship_dir in Path(textures_path).rglob(f'**/{file_name}'):
+                    for tex_file in ship_dir.rglob(f'**/{texture_file}'):
+                        texture_path_found = tex_file
+                        break
+                    if texture_path_found is not None:
+                        break
 
-        texture_path_found = texture_path_found or os.path.join(textures_path, texture_file)
+            if texture_path_found is None:
+                for ship_dir in Path(textures_path).rglob(f'**/{texture_file}'):
+                    texture_path_found = ship_dir
+                    break
+
+            texture_path_found = texture_path_found or os.path.join(textures_path, texture_file)
+
         #-------------------------------------------------
         #  Addition from Tosyk 4 dec 2022 END
         #-------------------------------------------------
